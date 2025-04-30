@@ -1,0 +1,8 @@
+selenium
+webdriver-manager
+rich
+pyyaml
+asyncio
+markdownify
+beautifulsoup4
+uv
