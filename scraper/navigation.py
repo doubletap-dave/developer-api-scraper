@@ -339,8 +339,10 @@ async def expand_specific_menu(
                 f"using XPath: {expanded_icon_xpath}"
             )
             logging.debug(log_check_expanded)
-            # Use find_element relative to menu_li or absolute xpath
-            expanded_icon = driver.find_element(selectors.By.XPATH, expanded_icon_xpath)
+            # Add a short wait for the expanded icon to potentially appear
+            expanded_icon = WebDriverWait(driver, 1).until(
+                EC.presence_of_element_located((selectors.By.XPATH, expanded_icon_xpath))
+            )
             if expanded_icon.is_displayed():
                 log_already_expanded = (
                     f"[expand_specific_menu] Menu '{safe_menu_text}' "
@@ -355,7 +357,14 @@ async def expand_specific_menu(
                     f"Will check/click collapsed icon."
                 )
                 logging.debug(log_expanded_not_disp)
-        except NoSuchElementException:
+        except TimeoutException: # Catch if WebDriverWait times out
+            log_expanded_not_found = (
+                f"[expand_specific_menu] Expanded icon not found within 1s "
+                f"for '{safe_menu_text}' using XPath. Assuming collapsed."
+            )
+            logging.debug(log_expanded_not_found)
+            # Pass to the next block to find collapsed icon
+        except NoSuchElementException: # Catch if find_element was used and failed
             log_expanded_not_found = (
                 f"[expand_specific_menu] Expanded icon not found "
                 f"for '{safe_menu_text}' using XPath. Assuming collapsed."
@@ -596,7 +605,7 @@ async def wait_for_content_update(driver: WebDriver, timeout: int = 20):
     """
     Waits for the page content to update after an action.
     1. Wait for loader (#loaderActive) to become invisible.
-    2. Wait for content markdown element (div#documentation markdown) present.
+    2. Wait for content container element (div#documentation container) present.
     """
     logging.info(f"Waiting for content update (max {timeout}s)...")
     try:
@@ -607,21 +616,43 @@ async def wait_for_content_update(driver: WebDriver, timeout: int = 20):
         )
         logging.debug("Loader overlay is invisible.")
 
-        # Step 2: Wait for the actual content markdown element to be present
+        # Step 2: Wait for the actual content container to be present AND contain a known content tag
         content_timeout = timeout  # Use full remaining timeout
-        content_selector = selectors.CONTENT_PANE_MARKDOWN[1]
+        content_container_selector = selectors.CONTENT_PANE_INNER_HTML_TARGET
+        content_container_selector_str = f"#{content_container_selector[1]}"
         log_step2_wait = (
-            f"Step 2: Waiting for content markdown element "
-            f"({content_selector}) to be present "
+            f"Step 2: Waiting for content container ({content_container_selector_str}) "
+            f"to be present AND contain '<app-api-doc-endpoint>' or '<markdown>' "
             f"(timeout: {content_timeout}s)..."
         )
         logging.debug(log_step2_wait)
-        content_element = WebDriverWait(driver, content_timeout).until(
-            EC.presence_of_element_located(selectors.CONTENT_PANE_MARKDOWN)
-        )
+
+        # Custom wait condition using lambda
+        def content_ready_condition(driver: WebDriver):
+            try:
+                container = driver.find_element(*content_container_selector)
+                # Check if either content tag exists within the container
+                has_endpoint = container.find_elements(selectors.By.CSS_SELECTOR, "app-api-doc-endpoint")
+                has_markdown = container.find_elements(selectors.By.CSS_SELECTOR, "markdown")
+                if has_endpoint or has_markdown:
+                    logging.debug(
+                        f"Content container {content_container_selector_str} found and contains a known content tag."
+                    )
+                    return container # Return the container element if ready
+                else:
+                    logging.debug(
+                        f"Content container {content_container_selector_str} found, but known content tag not yet present."
+                    )
+                    return False # Container found, but content not ready
+            except NoSuchElementException:
+                logging.debug(f"Content container {content_container_selector_str} not yet present.")
+                return False # Container not found
+
+        content_element = WebDriverWait(driver, content_timeout).until(content_ready_condition)
+
         log_info_update_complete = (
-            "Content update complete: Loader disappeared "
-            "and content markdown element is present."
+            "Content update complete: Loader disappeared and content container "
+            "is present with a known content tag."
         )
         logging.info(log_info_update_complete)
         return content_element
@@ -646,15 +677,16 @@ async def wait_for_content_update(driver: WebDriver, timeout: int = 20):
                 f"Timeout waiting for loader to disappear: {e}"
             ) from e
         else:
-            content_selector = selectors.CONTENT_PANE_MARKDOWN[1]
+            # Update selector reference in error message
+            content_container_selector_str = f"#{selectors.CONTENT_PANE_INNER_HTML_TARGET[1]}"
             log_err_content_timeout = (
                 f"Timeout ({timeout}s) waiting for content update: "
-                f"Loader disappeared, but content markdown "
-                f"({content_selector}) did not appear."
+                f"Loader disappeared, but content container ({content_container_selector_str}) "
+                f"did not appear OR did not contain a known content tag ('app-api-doc-endpoint' or 'markdown')."
             )
             logging.error(log_err_content_timeout)
             raise TimeoutException(
-                f"Timeout waiting for content markdown element: {e}"
+                f"Timeout waiting for content container with known tag: {e}"
             ) from e
     except Exception as e:
         log_err_unexpected = (

@@ -281,8 +281,8 @@ async def main():
                             sidebar_structure_blocks, f, indent=2, ensure_ascii=False
                         )
                     logging.info(
-                        "Parsed sidebar structure saved to '{structure_save_path}'"
-                    )  # F541 Fixed
+                        f"Parsed sidebar structure saved to '{structure_save_path}'"
+                    )
                 except Exception as e:
                     logging.exception(
                         f"Failed to save structure to '{structure_save_path}': {e}"
@@ -424,6 +424,8 @@ async def main():
                             await navigation.expand_specific_menu(
                                 driver, parent_menu_text, expand_delay=expand_delay
                             )
+                            # Add a small delay after expanding to let the DOM settle
+                            await asyncio.sleep(0.5)
                         # --- End dynamic collapse fix ---
 
                         await navigation.click_sidebar_item(

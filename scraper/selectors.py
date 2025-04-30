@@ -59,7 +59,11 @@ LOADER_OVERLAY = (
 
 # Phase 3 Selectors
 CONTENT_PANE = (By.ID, "documentation")  # Main content pane container
-CONTENT_PANE_MARKDOWN = (
-    By.CSS_SELECTOR,
-    "div#documentation markdown",
-)  # Actual markdown content element
+# CONTENT_PANE_MARKDOWN = (
+#     By.CSS_SELECTOR,
+#     "div#documentation markdown",
+# )  # Old selector: Only gets first <markdown>
+CONTENT_PANE_INNER_HTML_TARGET = (
+    By.ID,
+    "documentation"
+) # New selector: Target the container div itself
