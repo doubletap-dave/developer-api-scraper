@@ -1,0 +1,12 @@
+pre-commit==4.2.0
+pytest==8.2.2
+black==24.8.0
+flake8==7.1.0
+isort==5.13.2
+mypy==1.11.0
+types-requests
+types-PyYAML
+types-beautifulsoup4
+types-selenium
+filelock # Needed for concurrent state saving later
+tenacity # Needed for retry logic later
