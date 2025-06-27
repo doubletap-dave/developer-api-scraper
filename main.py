@@ -22,8 +22,12 @@ from selenium.common.exceptions import (
 )
 
 # Import all necessary modules
-from scraper import driver_setup  # Re-add selectors
-from scraper import content_extractor, navigation, sidebar_parser, storage, utils
+from wyrm import driver_setup  # Re-add selectors
+from wyrm import content_extractor, navigation, sidebar_parser, storage, utils
+
+# Add these imports
+import os
+from urllib.parse import urlparse
 
 
 async def main():
@@ -127,10 +131,10 @@ async def main():
         max_expand_attempts_arg = args.max_expand_attempts
 
     utils.setup_logging(
-        log_level=log_level, log_file=cfg.get("log_file", "logs/scraper.log")
+        log_level=log_level, log_file=cfg.get("log_file", "logs/wyrm.log")
     )
 
-    logging.info("--- Starting Scraper ---")
+    logging.info("--- Starting Wyrm ---")
     logging.debug(f"Config loaded: {cfg}")
     logging.debug(f"Effective log level: {log_level}")
     logging.debug(f"Effective headless mode: {headless}")
@@ -202,33 +206,54 @@ async def main():
     logging.debug(f"Using main output directory: {base_output_dir}")
     logging.debug(f"Using non-headless pause: {non_headless_pause}s")
 
-    driver = None
-    sidebar_structure = []  # Reinitialize here where it's actually used
-    processed_count = 0
-    skipped_count = 0
-    error_count = 0
-    no_content_count = 0
-    total_items_in_structure = 0  # Track total valid items
+    # <<< START NEW STRUCTURE MAP HANDLING >>>
+    # Use storage helper if available, otherwise construct path directly
+    structure_filename = getattr(storage, 'get_structure_map_filename', lambda url: f"structure_{urlparse(url).netloc.replace('.', '_')}.json")(cfg["target_url"])
+    structure_filepath = base_output_dir / structure_filename
+    sidebar_structure = None
+    driver = None # Initialize driver to None here
+    expansion_performed = False # Track if live expansion happened
 
-    try:
-        # --- Phase 1 & 2: Setup and Sidebar Parsing (Run always) ---
-        logging.info(
-            "Running Phase 1 & 2: Setup, Navigation, Sidebar Expansion & Parsing"
-        )
+    logging.info(f"Checking for existing structure map: {structure_filepath}")
+    sidebar_structure = sidebar_parser.load_structure_map(str(structure_filepath))
+
+    if sidebar_structure:
+        logging.info("Loaded existing sidebar structure map.")
+        # Initialize driver needed for later navigation, even if structure is loaded
         driver = driver_setup.initialize_driver(
             browser=cfg.get("webdriver", {}).get("browser", "chrome"), headless=headless
         )
+        # --- ADDED: Navigate and wait for sidebar even if loaded ---
+        logging.info("Navigating to target URL and waiting for sidebar...")
+        await navigation.navigate_to_url(driver, cfg["target_url"], timeout=navigation_timeout)
+        await navigation.wait_for_sidebar(driver, timeout=sidebar_wait_timeout)
+        # --- END ADDED ---
+        logging.info("Skipping initial *expansion* as structure was loaded.")
+        # No sidebar_html available if loaded from file
+        sidebar_html = None
+        expansion_performed = False # Still false, as full expansion didn't happen
+    else:
+        logging.info("Structure map not found or failed to load. Performing live parsing...")
+        # The actual parsing logic will be moved inside this 'else' block.
+        # pass # Placeholder for live parsing logic
+        # --- START LIVE PARSING LOGIC --- #
+        if not driver: # Initialize if structure loading failed AND driver is None
+             driver = driver_setup.initialize_driver(
+                 browser=cfg.get("webdriver", {}).get("browser", "chrome"), headless=headless
+             )
+
         await navigation.navigate_to_url(
             driver, cfg["target_url"], timeout=navigation_timeout
         )
         await navigation.expand_all_menus(
             driver, expand_delay=expand_delay, max_attempts=max_expand_attempts_arg
         )
+        expansion_performed = True # Mark expansion as done
         await asyncio.sleep(post_expand_settle_delay)
 
         sidebar_html = sidebar_parser.get_sidebar_html(driver)
 
-        # Save HTML if needed
+        # Save HTML if needed (only if parsed live)
         html_filename_arg = getattr(args, "save_html", None) if save_html_flag else None
         html_save_filename = (
             html_filename_arg
@@ -248,20 +273,21 @@ async def main():
                 )
         elif save_html_flag:
             logging.warning(
-                f"Could not save sidebar HTML to '{html_save_path}' because it was empty."
+                "HTML save requested, but sidebar HTML could not be retrieved."
             )
 
-        # Parse Structure
-        if sidebar_html:
-            # The structure is now a list of header blocks, each containing children
-            sidebar_structure_blocks = sidebar_parser.map_sidebar_structure(
-                sidebar_html
-            )
-            logging.info(
-                f"Phase 1 & 2 completed. Found {len(sidebar_structure_blocks)} top-level header blocks."
-            )
+        if not sidebar_html:
+            logging.critical("Failed to get sidebar HTML. Cannot parse structure.")
+            # No need to quit driver here, finally block handles it
+            sys.exit(1)
 
-            # --- Save Structure if needed ---
+        sidebar_structure = sidebar_parser.map_sidebar_structure(sidebar_html)
+
+        # Save the NEWLY PARSED structure map
+        if sidebar_structure:
+            logging.info(f"Attempting to save newly parsed structure map to {structure_filepath}")
+            sidebar_parser.save_structure_map(sidebar_structure, str(structure_filepath))
+            # Also save to debug if requested
             structure_filename_arg = (
                 getattr(args, "save_structure", None) if save_structure_flag else None
             )
@@ -271,265 +297,230 @@ async def main():
                 else default_structure_filename
             )
             structure_save_path = debug_output_dir / structure_save_filename
-
             if save_structure_flag:
                 try:
                     debug_output_dir.mkdir(parents=True, exist_ok=True)
-                    # Save the list of blocks directly
                     with open(structure_save_path, "w", encoding="utf-8") as f:
-                        json.dump(
-                            sidebar_structure_blocks, f, indent=2, ensure_ascii=False
-                        )
-                    logging.info(
-                        f"Parsed sidebar structure saved to '{structure_save_path}'"
-                    )
+                        json.dump(sidebar_structure, f, indent=4, ensure_ascii=False)
+                    logging.info(f"Parsed structure saved to '{structure_save_path}'")
                 except Exception as e:
                     logging.exception(
-                        f"Failed to save structure to '{structure_save_path}': {e}"
+                        f"Failed to save parsed structure to '{structure_save_path}': {e}"
                     )
-            # --- End Save Structure ---
-
-            # Flatten the structure for processing using the dedicated function
-            sidebar_structure = sidebar_parser.flatten_sidebar_structure(
-                sidebar_structure_blocks
-            )
-            # Calculate total AFTER flattening
-            total_items_in_structure = len(sidebar_structure)
-            # Original structure is saved above if needed
-            # sidebar_structure = [
-            #     item
-            #     for block in sidebar_structure_blocks
-            #     for item in block.get("children", [])
-            # ]
-            # total_items_in_structure = len(sidebar_structure)
-            # logging.info(
-            #     f"Flattened structure contains {total_items_in_structure} clickable items to process."
-            # )
         else:
-            logging.error(
-                "Sidebar HTML was empty. Cannot parse structure or proceed further."
-            )
-            # Optionally raise an error or exit if structure is essential
-            # For now, let's just log and prepare to exit gracefully
-            sidebar_structure = []
-            total_items_in_structure = 0
+            logging.critical("Failed to parse sidebar structure from HTML.")
+            # No need to quit driver here, finally block handles it
+            sys.exit(1)
+        # --- END LIVE PARSING LOGIC --- #
 
-        # --- Phase 3 & 4: Item Processing ---
-        if args.test_item_id:
-            logging.warning(
-                "Using deprecated --test-item-id. Prefer --max-items for testing."
-            )
-            # Find the specific item to test
-            test_item = next(
-                (
-                    item
-                    for item in sidebar_structure
-                    if item.get("id") == args.test_item_id
-                ),
-                None,
-            )
-            if test_item:
-                logging.info(f"Processing only test item: {args.test_item_id}")
-                sidebar_structure = [test_item]  # Process only this item
-                total_items_in_structure = 1
-            else:
-                logging.error(
-                    f"Test item ID '{args.test_item_id}' not found in structure."
-                )
-                sidebar_structure = []
-                total_items_in_structure = 0
-        elif args.max_items is not None and args.max_items >= 0:
-            logging.info(f"Limiting processing to a maximum of {args.max_items} items.")
-            sidebar_structure = sidebar_structure[: args.max_items]
-            total_items_in_structure = len(sidebar_structure)
-            logging.info(
-                f"Actual items to process after limit: {total_items_in_structure}"
-            )
+    # <<< END NEW STRUCTURE MAP HANDLING >>>
 
+    # Initialize counters here, outside the try/except for structure loading
+    processed_count = 0
+    skipped_count = 0
+    error_count = 0
+    no_content_count = 0
+    total_items_in_structure = 0  # Track total valid items
+
+    try:
+        # --- LIVE PARSING LOGIC MOVED HERE (if sidebar_structure is None) ---
+        # [THIS ENTIRE BLOCK IS BEING REMOVED]
+        # if not sidebar_structure:
+        #     # ... (Live parsing, structure saving logic is already here) ...
+        #     pass # This block is complete
+        # --- END OF LIVE PARSING LOGIC ---
+
+        # --- Phase 4: Loop Through Structure and Scrape --- #
+        logging.info("Proceeding to Phase 4: Content Scraping")
+        # Ensure structure exists before flattening
         if not sidebar_structure:
-            logging.warning("Sidebar structure is empty. No items to process.")
-        else:
-            # Set up Progress Bar
-            progress = Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                TextColumn("({task.completed} of {task.total})"),
-                TimeElapsedColumn(),
-                # TextColumn("[bold blue]Skipped: {task.fields[skipped]}"), # Removed custom fields for now
-                # TextColumn("[bold red]Errors: {task.fields[errors]}"),
-            )
+            logging.critical("Sidebar structure is missing after load/parse attempt. Cannot proceed.")
+            sys.exit(1)
 
-            with progress:
-                task = progress.add_task(
-                    "[cyan]Scraping Items...",
-                    total=total_items_in_structure,
-                    # skipped=0, # Removed custom fields
-                    # errors=0,
-                )
+        # Flatten the structure for easier iteration
+        flattened_structure = sidebar_parser.flatten_sidebar_structure(sidebar_structure)
+        # Filter out items without an ID, as they cannot be reliably clicked/processed
+        valid_items = [item for item in flattened_structure if item.get("id")]
+        total_items_in_structure = len(valid_items)
+        logging.info(
+            f"Flattened structure contains {total_items_in_structure} valid items with IDs."
+        )
 
-                for (
-                    item
-                ) in sidebar_structure:  # sidebar_structure is the flattened list now
-                    item_id = item.get("id")  # Might be None
-                    item_text = item.get("text", "Unknown Item")
-                    item_type = item.get("type")  # Crucial check
-
-                    # --- Skip if not a clickable item with an ID --- #
-                    if item_type != "item" or not item_id:
-                        if item_type == "menu":
-                            log_msg = f"Skipping entry because it's a menu: '{item_text}' (ID: {item_id or 'None'})"
-                            logging.debug(log_msg)
-                        elif not item_id:
-                            log_msg = (
-                                f"Skipping item '{item_text}' because it lacks an ID."
-                            )
-                            logging.warning(log_msg)
-                        else:
-                            log_msg = f"Skipping entry '{item_text}' (Type: {item_type}, ID: {item_id}). Not a processable item."
-                            logging.warning(log_msg)
-                        progress.update(
-                            task, advance=1
-                        )  # Advance progress for skipped non-target items
-                        # Consider using a different counter if distinguishing skips is important
-                        # skipped_count += 1
-                        continue
-                    # --- End Skip Check --- #
-
-                    item_header = item.get("header", None)
-                    item_menu = item.get("menu", None)
-                    logging.info(
-                        f"--- Processing Item: '{item_text}' (ID: {item_id}) ---"
-                    )
-
-                    try:
-                        output_file_path = utils.get_output_file_path(
-                            item_header, item_menu, item_text, base_output_dir
-                        )
-                        if output_file_path.exists() and not args.force:
-                            logging.info(
-                                f"Item '{item_text}' already exists and --force not used. Skipping."
-                            )
-                            skipped_count += 1
-                            # progress.update(task, advance=1, skipped=skipped_count) # Removed custom fields
-                            progress.update(task, advance=1)
-                            continue
-
-                        # --- Re-expand parent menu if necessary (dynamic collapse fix) ---
-                        parent_menu_text = item.get("parent_menu_text")
-                        if parent_menu_text:
-                            log_msg = f"Ensuring parent menu '{parent_menu_text}' is expanded before clicking '{item_text}'"
-                            logging.debug(log_msg)
-                            await navigation.expand_specific_menu(
-                                driver, parent_menu_text, expand_delay=expand_delay
-                            )
-                            # Add a small delay after expanding to let the DOM settle
-                            await asyncio.sleep(0.5)
-                        # --- End dynamic collapse fix ---
-
-                        await navigation.click_sidebar_item(
-                            driver, item_id, timeout=navigation_timeout
-                        )
-                        await asyncio.sleep(
-                            post_click_delay
-                        )  # Small delay before content wait
-
-                        # Wait for content pane to potentially update
-                        await navigation.wait_for_content_update(
-                            driver, timeout=content_wait_timeout
-                        )
-
-                        # Extract content
-                        markdown_content = (
-                            await content_extractor.extract_and_convert_content(driver)
-                        )
-
-                        if markdown_content:
-                            saved = await storage.save_markdown(
-                                item_header,
-                                item_menu,
-                                item_text,
-                                markdown_content,
-                                base_output_dir,
-                                overwrite=args.force,
-                            )
-                            if saved:
-                                processed_count += 1
-                            else:
-                                # This case shouldn't happen if we checked file existence above,
-                                # but handle potential save errors logged by save_markdown
-                                logging.warning(
-                                    f"save_markdown indicated failure for item '{item_text}', check previous logs."
-                                )
-                                error_count += 1
-                        else:
-                            logging.warning(
-                                f"No content extracted for item '{item_text}' (ID: {item_id}). Skipping save."
-                            )
-                            no_content_count += 1
-                            # Optionally treat this as an error or just a skip
-                            error_count += 1  # Let's count it as an error for now
-
-                    except TimeoutException as e:
-                        logging.error(
-                            f"Timeout processing item '{item_text}' (ID: {item_id}): {e}"
-                        )
-                        error_count += 1
-                    except ElementClickInterceptedException as e:
-                        logging.error(
-                            f"Click intercepted for item '{item_text}' (ID: {item_id}): {e}"
-                        )
-                        error_count += 1
-                    except NoSuchElementException as e:
-                        logging.error(
-                            f"Could not find element for item '{item_text}' (ID: {item_id}): {e}"
-                        )
-                        error_count += 1
-                    except Exception as e:
-                        logging.exception(
-                            f"Unexpected error processing item '{item_text}' (ID: {item_id}): {e}"
-                        )
-                        error_count += 1
-                    finally:
-                        # Update progress regardless of outcome for this item
-                        # progress.update(task, advance=1, errors=error_count, skipped=skipped_count) # Removed custom fields
-                        progress.update(task, advance=1)
-
-        # --- End of Processing Loop ---
-
-        # Keep browser open for inspection if not headless and not processing all items
-        if not headless and args.max_items is not None:
+        # Apply --max-items limit if specified
+        items_to_process = valid_items
+        if args.max_items is not None and args.max_items >= 0:
+            items_to_process = valid_items[: args.max_items]
             logging.info(
-                f"Limited run complete. Browser will remain open for {non_headless_pause} seconds for inspection..."
+                f"Processing limited to first {len(items_to_process)} items (--max-items)."
             )
-            await asyncio.sleep(non_headless_pause)
+        elif args.test_item_id:
+            logging.warning(
+                "--test-item-id is deprecated. Use --max-items=1 and check structure file."
+            )
+            items_to_process = [
+                item for item in valid_items if item.get("id") == args.test_item_id
+            ]
+            if not items_to_process:
+                logging.error(
+                    f"Item with ID '{args.test_item_id}' not found in flattened structure."
+                )
+                items_to_process = [] # Ensure it's empty
 
+        if not items_to_process:
+            logging.warning("No items selected for processing. Exiting.")
+            # Driver might be None if loading failed before init
+            # The finally block will handle driver quit if it exists.
+            sys.exit(0)
+
+        logging.info(f"Starting Phase 4: Processing {len(items_to_process)} items...")
+        # Ensure base output dir exists
+        base_output_dir.mkdir(parents=True, exist_ok=True)
+
+        progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("({task.completed} of {task.total})"),
+            TimeElapsedColumn(),
+            transient=False, # Keep progress visible after completion
+        )
+
+        with progress:
+            task_id = progress.add_task(
+                "Scraping Items", total=len(items_to_process)
+            )
+
+            for item_index, item in enumerate(items_to_process):
+                item_id = item.get("id")
+                item_text = item.get("text", "Unknown Item")
+                item_type = item.get("type", "item")
+                current_item_desc = f"{item_type.capitalize()}: '{item_text}' (ID: {item_id})"
+                progress.update(task_id, description=f"Processing {current_item_desc}") # Update description
+
+                # Should always have ID due to filtering above, but check anyway
+                if not item_id:
+                    logging.warning(f"Skipping item {item_text} - Missing ID.")
+                    skipped_count += 1
+                    progress.update(task_id, advance=1)
+                    continue
+
+                logging.info(f"Processing {current_item_desc}")
+                # logging.debug(f"Target output file: {markdown_filepath}") # Path generated inside save_markdown
+
+                # Check if driver is still valid inside loop
+                if not driver:
+                    logging.error("WebDriver is not initialized. Cannot process item.")
+                    error_count += 1
+                    progress.update(task_id, advance=1, description=f"Error processing {item_text} - No Driver")
+                    continue # Skip to next item
+
+                # --- RE-ENABLE/ENSURE Parent Menu Expansion --- #
+                # Always try to expand the immediate parent menu if it exists,
+                # regardless of whether structure was loaded or live-parsed.
+                parent_menu_text = item.get("parent_menu_text")
+                if parent_menu_text:
+                    logging.debug(
+                        f"Ensuring parent menu '{parent_menu_text}' is expanded before clicking '{item_text}'"
+                    )
+                    try:
+                        await navigation.expand_specific_menu(
+                            driver, parent_menu_text, timeout=navigation_timeout, expand_delay=expand_delay
+                        )
+                        # Brief pause after potential expansion
+                        await asyncio.sleep(0.3)
+                    except Exception as expand_err:
+                        logging.warning(f"Could not ensure parent menu '{parent_menu_text}' was expanded: {expand_err}")
+                        # Attempt click anyway, maybe it's already expanded or error is transient
+                # --- END Parent Menu Expansion --- #
+
+                # Use the robust click function
+                clicked = await navigation.click_sidebar_item(
+                    driver,
+                    item_id,
+                    timeout=navigation_timeout, # Use nav timeout for finding item
+                )
+                # Add delay manually if needed after the click attempt returns
+                await asyncio.sleep(post_click_delay)
+
+                if not clicked: # Check the return value if click_sidebar_item provides one (currently doesn't explicitly)
+                    # If click_sidebar_item raises exceptions on failure, this check might not be needed
+                    # If it returns bool, this check is useful.
+                    # Assuming for now it raises on failure, otherwise adjust logic here.
+                    pass # Error logged and exception raised within click_sidebar_item
+
+                # 2. Wait for Content and Extract
+                logging.debug(
+                    f"Waiting for content to load after clicking {item_id}... (Timeout: {content_wait_timeout}s)"
+                )
+                # Content wait/extraction needs the driver
+                await navigation.wait_for_content_update(
+                    driver, timeout=content_wait_timeout
+                )
+                logging.debug("Content area loaded.")
+
+                # Get content pane for debug HTML extraction
+                from wyrm import selectors
+                content_pane = driver.find_element(*selectors.CONTENT_PANE_INNER_HTML_TARGET)
+                debug_html_content = content_pane.get_attribute("innerHTML")
+                # Save debug HTML for analysis
+                if args.debug:
+                    debug_html_path = debug_output_dir / f"page_content_{item_id}.html"
+                    debug_html_path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(debug_html_path, 'w', encoding='utf-8') as f:
+                        f.write(debug_html_content)
+                    logging.debug(f"Saved debug HTML to: {debug_html_path}")
+
+                # Extract content
+                extracted_content = await content_extractor.extract_and_convert_content(driver)
+
+                # 3. Save Content
+                if extracted_content:
+                    logging.debug(f"Extracted markdown content (length: {len(extracted_content)}). Saving...")
+                    # Call the correct save function which handles path generation
+                    saved = await storage.save_markdown(
+                        header=item.get("header"),
+                        menu=item.get("menu"),
+                        item_text=item_text,
+                        markdown_content=extracted_content,
+                        base_output_dir=base_output_dir,
+                        overwrite=args.force,
+                    )
+                    if saved:
+                         processed_count += 1
+                         progress.update(task_id, description=f"Saved {item_text}")
+                    else:
+                        # save_markdown logs errors/skips, update counters based on return
+                        if Path(storage.get_output_file_path(item.get("header"), item.get("menu"), item_text, base_output_dir)).exists() and not args.force:
+                            skipped_count += 1 # It likely skipped because file exists
+                        else:
+                            error_count += 1 # Assume error if not skipped and not saved
+                        progress.update(task_id, description=f"Skipped/Error saving {item_text}") # General update
+                else:
+                    logging.warning(
+                        f"No content extracted or converted for item {item_id} ('{item_text}')."
+                    )
+                    no_content_count += 1
+                    progress.update(task_id, description=f"No content for {item_text}")
+
+    except KeyboardInterrupt:
+        logging.warning("--- User interrupted execution ---")
     except Exception as e:
-        logging.exception(f"An unhandled error occurred in main: {e}")
+        logging.exception(f"--- An unexpected error occurred in main loop: {e} ---")
     finally:
         if driver:
-            logging.info("Closing WebDriver.")
-            # Optional pause before closing if not headless, useful for debugging
-            if not headless:
-                logging.info(
-                    f"Non-headless mode: Pausing for {non_headless_pause} seconds before closing browser..."
-                )
+            if not headless and non_headless_pause > 0:
+                logging.info(f"Non-headless mode: Pausing for {non_headless_pause}s before closing browser...")
                 await asyncio.sleep(non_headless_pause)
+            logging.info("Closing WebDriver...")
             driver.quit()
-            logging.info("WebDriver closed.")
 
-    logging.info("--- Scraper Finished ---")
-    logging.info("Run Summary:")
-    logging.info(f"  Total items in structure: {total_items_in_structure}")
-    # Correctly calculate items attempted based on limit or full structure
-    items_attempted = len(sidebar_structure)
-    logging.info(f"  Items attempted:          {items_attempted}")
-    logging.info(f"  Successfully processed:   {processed_count}")
-    logging.info(f"  Skipped (already exist):  {skipped_count}")
-    logging.info(f"  No content extracted:     {no_content_count}")
-    logging.info(f"  Errors during processing: {error_count}")
-    logging.info("--- End of Run ---")
+    logging.info("--- Wyrm Finished ---")
+    logging.info(f"Processed: {processed_count}")
+    logging.info(f"Skipped (existing/no ID): {skipped_count}")
+    logging.info(f"Errors: {error_count}")
+    logging.info(f"Items with no content extracted: {no_content_count}")
+    logging.info(f"Total valid items found in structure: {total_items_in_structure}")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 target_url: "https://developer.dell.com/apis/4008/versions/4.6.1/docs"
 output_directory: "output"
-log_file: "logs/scraper.log"
+log_file: "logs/wyrm.log"
 log_level: "INFO" # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 webdriver:

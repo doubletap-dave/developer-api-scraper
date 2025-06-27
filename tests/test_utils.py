@@ -1,9 +1,9 @@
 # tests/test_utils.py
 import pytest
 
-# Attempt to import from scraper.utils, adjust if structure differs
+# Attempt to import from wyrm.utils, adjust if structure differs
 try:
-    from scraper import utils
+    from wyrm import utils
 except ImportError:
     # Define utils as None or a mock object if import fails
     utils = None  # type: ignore
@@ -12,7 +12,7 @@ except ImportError:
 # Basic placeholder test if utils or slugify cannot be imported
 @pytest.mark.skipif(
     utils is None or not hasattr(utils, "slugify"),
-    reason="scraper.utils or slugify not found",
+    reason="wyrm.utils or slugify not found",
 )
 def test_slugify_simple():
     assert utils.slugify("Simple Header") == "simple-header"
@@ -20,7 +20,7 @@ def test_slugify_simple():
 
 @pytest.mark.skipif(
     utils is None or not hasattr(utils, "slugify"),
-    reason="scraper.utils or slugify not found",
+    reason="wyrm.utils or slugify not found",
 )
 def test_slugify_special_chars():
     input_str = "Header with / and (special)"
@@ -30,7 +30,7 @@ def test_slugify_special_chars():
 
 @pytest.mark.skipif(
     utils is None or not hasattr(utils, "slugify"),
-    reason="scraper.utils or slugify not found",
+    reason="wyrm.utils or slugify not found",
 )
 def test_slugify_multiple_hyphens():
     assert utils.slugify("Extra --- Spaces") == "extra-spaces"
@@ -38,7 +38,7 @@ def test_slugify_multiple_hyphens():
 
 @pytest.mark.skipif(
     utils is None or not hasattr(utils, "slugify"),
-    reason="scraper.utils or slugify not found",
+    reason="wyrm.utils or slugify not found",
 )
 def test_slugify_empty():
     assert utils.slugify("") == "_"
@@ -47,7 +47,7 @@ def test_slugify_empty():
 
 @pytest.mark.skipif(
     utils is None or not hasattr(utils, "slugify"),
-    reason="scraper.utils or slugify not found",
+    reason="wyrm.utils or slugify not found",
 )
 def test_slugify_leading_trailing():
     assert utils.slugify("- Leading Dash") == "leading-dash"

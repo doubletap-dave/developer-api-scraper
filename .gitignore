@@ -182,4 +182,4 @@ chromedriver/
 _memory_bank/
 .docs/
 .cursor/
-/scraper/__pycache__/
+/wyrm/__pycache__/
