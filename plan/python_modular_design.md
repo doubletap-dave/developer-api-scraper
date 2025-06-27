@@ -160,7 +160,7 @@ def click_sidebar_item(driver: WebDriver, node_id: str) -> bool:
 
     Returns:
         True if the item was clicked successfully, False otherwise.
-        
+
     Raises:
         NoSuchElementException: If the element with the given ID is not found.
     """
@@ -193,4 +193,4 @@ Every Pull Request MUST be reviewed for:
 
 **These standards are non-negotiable.** They are the direct result of understanding the long-term costs of monolithic code. Following these rules prevents technical debt and ensures our project is built on a foundation of clean, testable, and scalable code.
 
-**Every developer** MUST follow these standards. **Every code review** MUST verify them. This discipline allows us to move faster and build more reliable software. 
+**Every developer** MUST follow these standards. **Every code review** MUST verify them. This discipline allows us to move faster and build more reliable software.

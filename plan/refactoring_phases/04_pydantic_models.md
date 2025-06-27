@@ -56,4 +56,4 @@ Analyze the data currently being passed around (e.g., as dictionaries from the c
 - Data flowing between services is now explicit, validated, and self-documenting.
 - The risk of runtime errors due to misspelled keys or incorrect data types is significantly reduced.
 - The project's data architecture is robust and easy to reason about.
-- The project version is updated to `1.3.0`. 
+- The project version is updated to `1.3.0`.

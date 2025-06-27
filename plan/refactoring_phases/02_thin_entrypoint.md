@@ -55,4 +55,4 @@ Ensure the application still runs as expected with the new structure.
 - All core process logic is now encapsulated within the `wyrm.services.Orchestrator` class.
 - The command-line interface is handled cleanly by `Typer`.
 - The project's architecture is now service-oriented, setting the stage for further refactoring in Phase 3.
-- The project version is updated to `1.1.0`. 
+- The project version is updated to `1.1.0`.

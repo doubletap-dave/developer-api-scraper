@@ -54,4 +54,4 @@ This is the core of the phase and involves changing the `run` method from a sequ
 - The scraper's total runtime is drastically reduced.
 - The level of concurrency is easily configurable.
 - The application remains stable due to the use of a semaphore and by ensuring each concurrent task has its own isolated WebDriver instance.
-- The project version is updated to `1.5.0`. 
+- The project version is updated to `1.5.0`.

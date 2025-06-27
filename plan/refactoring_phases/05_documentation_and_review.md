@@ -62,4 +62,4 @@ Once this phase is complete, the `refactor/modular-architecture` branch is ready
 - Every module, class, and function is clearly documented, making the code easy for new developers to understand.
 - The `flake8` linter passes without any errors.
 - The project is in a clean, stable, and maintainable state, ready for future feature development.
-- The project version is updated to `1.3.1`. 
+- The project version is updated to `1.3.1`.

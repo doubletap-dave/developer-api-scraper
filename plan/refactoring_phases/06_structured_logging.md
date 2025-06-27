@@ -57,4 +57,4 @@ A dedicated service will encapsulate all logging configuration. This keeps the s
 - When running the application, the console shows clean, readable `INFO`-level logs.
 - A `wyrm.json` file is created in the `logs` directory, containing `DEBUG`-level logs where each line is a complete JSON object.
 - Logs are now enriched with contextual key-value data, making debugging and analysis significantly more powerful.
-- The project version is updated to `1.4.0`. 
+- The project version is updated to `1.4.0`.

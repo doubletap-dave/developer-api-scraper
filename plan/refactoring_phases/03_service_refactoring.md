@@ -65,4 +65,4 @@ For each module, we will create a corresponding service class in the `wyrm/servi
 - The entire application logic is now encapsulated within service classes, promoting separation of concerns.
 - The `Orchestrator` now acts as a true conductor, delegating tasks to specialized services.
 - The codebase is significantly more modular, testable, and easier to understand.
-- The project version is updated to `1.2.0`. 
+- The project version is updated to `1.2.0`.

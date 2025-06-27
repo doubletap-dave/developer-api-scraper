@@ -18,7 +18,7 @@ We will create a `VERSION` file at the root of the project to track the current 
 
 ## Refactoring Phases
 
-*   [ ] **Phase 1: Setup & Tooling (`v1.0.1`)**
+*   [x] **Phase 1: Setup & Tooling (`v1.0.1`)** ✅ **COMPLETE**
     *   **Objective**: Establish the development environment and automated enforcement of our new standards.
     *   **Details**: [Phase 1 Plan](./refactoring_phases/01_setup_and_tooling.md)
 
@@ -44,4 +44,4 @@ We will create a `VERSION` file at the root of the project to track the current 
 
 *   [ ] **Phase 7: Parallel Processing (`v1.5.0`)**
     *   **Objective**: Significantly improve performance by scraping multiple items concurrently.
-    *   **Details**: [Phase 7 Plan](./refactoring_phases/07_parallel_processing.md) 
+    *   **Details**: [Phase 7 Plan](./refactoring_phases/07_parallel_processing.md)
