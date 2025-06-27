@@ -15,10 +15,31 @@ from wyrm.models.config import AppConfig
 
 
 class ConfigurationService:
-    """Service for handling configuration and logging setup."""
+    """Service for handling configuration and logging setup.
+
+    This service provides comprehensive configuration management including:
+    - YAML configuration file loading and validation
+    - Pydantic model-based configuration validation
+    - Rich logging setup with console and file handlers
+    - CLI argument override handling
+    - Directory setup and environment management
+
+    Attributes:
+        _config: Internal storage for loaded configuration.
+    """
 
     def __init__(self) -> None:
-        """Initialize the Configuration service."""
+        """Initialize the Configuration service.
+
+        Sets up internal state for configuration storage. The service
+        starts with empty configuration that gets populated via load_config().
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
         self._config = {}
 
     def setup_logging(
@@ -27,9 +48,20 @@ class ConfigurationService:
             log_file: Optional[Path] = None) -> None:
         """Configure logging using RichHandler for console and FileHandler for file.
 
+        Sets up comprehensive logging with both console output (using Rich for
+        enhanced formatting) and file output. Configures appropriate log levels
+        for third-party libraries to reduce noise.
+
         Args:
-            log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
-            log_file: Path to log file (defaults to wyrm.log)
+            log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+            log_file: Path to log file. If None, defaults to "wyrm.log".
+
+        Returns:
+            None
+
+        Raises:
+            ValueError: If log_level is not a valid logging level.
+            OSError: If log file cannot be created or written to.
         """
         if log_file is None:
             log_file = Path("wyrm.log")
@@ -75,16 +107,21 @@ class ConfigurationService:
     def load_config(self, config_path: Optional[Path] = None) -> AppConfig:
         """Load configuration from a YAML file and parse into AppConfig model.
 
+        Loads and validates configuration from a YAML file using Pydantic models
+        for type safety and validation. The configuration is parsed into an
+        AppConfig model that provides structured access to all settings.
+
         Args:
-            config_path: Path to configuration file (defaults to config.yaml)
+            config_path: Path to YAML configuration file. If None, defaults to "config.yaml".
 
         Returns:
-            Validated AppConfig model
+            AppConfig: Validated configuration model with all settings.
 
         Raises:
-            FileNotFoundError: If configuration file doesn't exist
-            yaml.YAMLError: If configuration file is invalid YAML
-            ValidationError: If configuration doesn't match schema
+            FileNotFoundError: If configuration file doesn't exist.
+            yaml.YAMLError: If configuration file contains invalid YAML.
+            ValidationError: If configuration doesn't match the AppConfig schema.
+            OSError: If file cannot be read due to permissions or other IO errors.
         """
         if config_path is None:
             config_path = Path("config.yaml")
@@ -115,11 +152,19 @@ class ConfigurationService:
     def extract_configuration_values(self, config: AppConfig) -> Dict:
         """Extract configuration values from AppConfig model.
 
+        Converts the structured AppConfig model into a flat dictionary format
+        for backward compatibility with existing code. Handles nested configuration
+        sections and provides sensible defaults for optional values.
+
         Args:
-            config: Validated AppConfig model
+            config: Validated AppConfig model containing all configuration settings.
 
         Returns:
-            Processed configuration values dictionary for backward compatibility
+            Dict: Flattened configuration dictionary with processed values.
+
+        Raises:
+            AttributeError: If required configuration attributes are missing.
+            Exception: If configuration extraction fails for any reason.
         """
         logging.info("Extracting configuration values from AppConfig model...")
 
@@ -154,12 +199,22 @@ class ConfigurationService:
     def merge_cli_overrides(self, config: AppConfig, cli_args: Dict) -> AppConfig:
         """Merge CLI argument overrides into AppConfig model.
 
+        Takes CLI arguments and merges them into the base configuration,
+        creating a new AppConfig instance with the overridden values.
+        This allows command-line arguments to take precedence over file configuration.
+
         Args:
-            config: Base AppConfig model
-            cli_args: CLI arguments to merge
+            config: Base AppConfig model loaded from configuration file.
+            cli_args: Dictionary of CLI arguments to override. Supported keys:
+                - headless: Override browser headless mode
+                - log_level: Override logging level
+                - max_expand_attempts: Override maximum menu expansion attempts
 
         Returns:
-            Updated AppConfig model with CLI overrides
+            AppConfig: New AppConfig instance with CLI overrides applied.
+
+        Raises:
+            ValidationError: If CLI overrides result in invalid configuration.
         """
         # Create a copy of the config as a dictionary for modification
         config_dict = config.dict()
@@ -185,10 +240,21 @@ class ConfigurationService:
         return AppConfig(**config_dict)
 
     def setup_directories(self, config_values: Dict) -> None:
-        """Set up required directories.
+        """Set up required directories for the application.
+
+        Creates all necessary directories for output files, debug files, and logs.
+        Ensures that the directory structure exists before processing begins.
 
         Args:
-            config_values: Configuration values containing directory paths
+            config_values: Configuration dictionary containing directory paths.
+                Expected keys: base_output_dir, debug_output_dir.
+
+        Returns:
+            None
+
+        Raises:
+            OSError: If directories cannot be created due to permissions or disk space.
+            KeyError: If required directory paths are missing from config_values.
         """
         directories = [
             config_values["base_output_dir"],
@@ -198,17 +264,26 @@ class ConfigurationService:
 
         for directory in directories:
             try:
-                directory.mkdir(parents=True, exist_ok=True)
+                Path(directory).mkdir(parents=True, exist_ok=True)
                 logging.debug(f"Directory ensured: {directory}")
             except Exception as e:
                 logging.error(f"Failed to create directory {directory}: {e}")
                 raise
 
+        logging.info("All required directories have been set up.")
+
     def get_environment_info(self) -> Dict:
-        """Get environment information for debugging.
+        """Get information about the current environment.
+
+        Collects and returns information about the runtime environment
+        including Python version, platform, and other relevant details
+        for debugging and logging purposes.
+
+        Args:
+            None
 
         Returns:
-            Dictionary containing environment information
+            Dict: Environment information including system details.
         """
         import platform
         import sys
@@ -218,13 +293,23 @@ class ConfigurationService:
             "platform": platform.platform(),
             "architecture": platform.architecture(),
             "processor": platform.processor(),
-            "python_executable": sys.executable,
         }
 
     def get_config(self) -> AppConfig:
-        """Get the loaded configuration.
+        """Get the currently loaded configuration.
+
+        Returns the configuration that was loaded via load_config().
+        Useful for services that need access to the full configuration object.
+
+        Args:
+            None
 
         Returns:
-            AppConfig model
+            AppConfig: Currently loaded configuration model.
+
+        Raises:
+            RuntimeError: If no configuration has been loaded yet.
         """
+        if not self._config:
+            raise RuntimeError("No configuration loaded. Call load_config() first.")
         return self._config

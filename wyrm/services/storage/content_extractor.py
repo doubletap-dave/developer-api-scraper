@@ -1,12 +1,12 @@
-"""Content extraction module for Wyrm application.
+"""Content extraction service for Wyrm application.
 
-This module handles extracting and converting content from web pages,
-specifically Dell Developer API documentation.
+This module handles the extraction of content from web pages, converting
+HTML content to markdown format and managing the extraction workflow.
 """
 
 import asyncio
 import logging
-from typing import Dict, Optional
+from typing import Optional
 
 from bs4 import BeautifulSoup
 from markdownify import markdownify
@@ -14,10 +14,16 @@ from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.remote.webdriver import WebDriver
 
 from ..selectors_service import SelectorsService
+from wyrm.models.scrape import ScrapedContent
 
 
 class ContentExtractor:
-    """Handles content extraction and conversion from web pages."""
+    """Service for extracting and processing content from web pages.
+
+    Handles the conversion of HTML content to markdown format and manages
+    the complete content extraction workflow including navigation, waiting
+    for content to load, and processing the extracted data.
+    """
 
     def __init__(self) -> None:
         """Initialize the content extractor."""

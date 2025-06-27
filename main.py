@@ -76,7 +76,34 @@ def main(
     """Scrape developer API documentation with intelligent navigation.
 
     This command coordinates the entire scraping workflow from configuration
-    loading to final content extraction and storage.
+    loading to final content extraction and storage. It serves as a thin
+    entrypoint that delegates all work to the Orchestrator service.
+
+    Args:
+        config: Path to the YAML configuration file containing scraping settings.
+        headless: Override headless browser mode. If None, uses config setting.
+        log_level: Override logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+        save_structure: Save parsed sidebar structure to debug directory.
+            If provided without value, uses default filename.
+        save_html: Save raw sidebar HTML to debug directory.
+            If provided without value, uses default filename.
+        debug: Enable comprehensive debug mode with DEBUG logging,
+            forced structure/HTML saves, and non-headless browser.
+        max_expand_attempts: Maximum number of menu expansion attempts.
+            Useful for testing or limiting execution time.
+        force: Overwrite existing output files instead of skipping them.
+        test_item_id: DEPRECATED. Process only the specified item ID.
+            Use --max-items=1 instead for testing single items.
+        max_items: Maximum number of items to process from sidebar structure.
+            Useful for testing or partial runs.
+        resume_info: Display resume information showing existing vs missing files,
+            then exit without processing.
+
+    Raises:
+        typer.Exit: With code 1 if interrupted by user or on error.
+
+    Returns:
+        None: Function exits via typer.Exit or completes successfully.
     """
     # Convert save flags to boolean
     save_structure_flag = save_structure is not None

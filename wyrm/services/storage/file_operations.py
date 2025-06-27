@@ -1,21 +1,207 @@
-"""File operations module for Wyrm application.
+"""File operations service for Wyrm application.
 
-This module handles file path generation, markdown saving, and file system operations.
+This module handles file I/O operations including saving content to files,
+managing output directories, and handling file system operations.
 """
 
+import json
 import logging
 import re
 import unicodedata
 from pathlib import Path
-from typing import Dict, Optional
+from typing import List, Optional
+
+from wyrm.models.scrape import SidebarItem, SidebarStructure
 
 
 class FileOperations:
-    """Handles file operations and path management."""
+    """Service for handling file system operations.
+
+    Manages all file I/O operations including content saving, directory
+    management, and file system utilities for the scraping workflow.
+    """
 
     def __init__(self) -> None:
-        """Initialize the file operations handler."""
+        """Initialize the FileOperations service.
+
+        Sets up the service for handling file operations throughout
+        the scraping workflow.
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
         pass
+
+    def save_content_to_file(
+        self,
+        content: str,
+        output_path: Path,
+        item_info: Optional[str] = None
+    ) -> bool:
+        """Save content to a file with proper error handling.
+
+        Writes content to the specified file path, creating parent directories
+        as needed. Provides comprehensive error handling and logging.
+
+        Args:
+            content: Content string to save to file.
+            output_path: Path where the content should be saved.
+            item_info: Optional information about the item for logging.
+
+        Returns:
+            bool: True if save was successful, False otherwise.
+
+        Raises:
+            OSError: If file cannot be written due to permissions or disk space.
+        """
+        try:
+            # Ensure parent directory exists
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Write content to file
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+
+            logging.info(f"Content saved to: {output_path}")
+            return True
+
+        except Exception as e:
+            error_msg = f"Failed to save content to {output_path}: {e}"
+            if item_info:
+                error_msg = f"Failed to save {item_info} to {output_path}: {e}"
+            logging.error(error_msg)
+            return False
+
+    def save_structure_to_file(
+        self,
+        structure: SidebarStructure,
+        output_path: Path
+    ) -> bool:
+        """Save sidebar structure to JSON file.
+
+        Serializes the sidebar structure to JSON format and saves it to
+        the specified path for later use or debugging.
+
+        Args:
+            structure: SidebarStructure model to save.
+            output_path: Path where the structure should be saved.
+
+        Returns:
+            bool: True if save was successful, False otherwise.
+        """
+        try:
+            # Ensure parent directory exists
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Convert to dictionary and save as JSON
+            structure_dict = structure.dict()
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(structure_dict, f, indent=2, ensure_ascii=False)
+
+            logging.info(f"Structure saved to: {output_path}")
+            return True
+
+        except Exception as e:
+            logging.error(f"Failed to save structure to {output_path}: {e}")
+            return False
+
+    def load_structure_from_file(self, file_path: Path) -> Optional[SidebarStructure]:
+        """Load sidebar structure from JSON file.
+
+        Loads and deserializes a sidebar structure from a JSON file,
+        returning None if the file doesn't exist or is invalid.
+
+        Args:
+            file_path: Path to the JSON file containing the structure.
+
+        Returns:
+            Optional[SidebarStructure]: Loaded structure or None if failed.
+        """
+        try:
+            if not file_path.exists():
+                return None
+
+            with open(file_path, 'r', encoding='utf-8') as f:
+                structure_dict = json.load(f)
+
+            # Convert back to SidebarStructure model
+            structure = SidebarStructure(**structure_dict)
+            logging.info(f"Structure loaded from: {file_path}")
+            return structure
+
+        except Exception as e:
+            logging.error(f"Failed to load structure from {file_path}: {e}")
+            return None
+
+    def get_output_filename(self, item: SidebarItem) -> str:
+        """Generate output filename for a sidebar item.
+
+        Creates a safe filename based on the item's text and ID,
+        ensuring compatibility across different file systems.
+
+        Args:
+            item: SidebarItem to generate filename for.
+
+        Returns:
+            str: Safe filename for the item.
+        """
+        # Use item text and ID to create filename
+        text = item.text if hasattr(item, 'text') else str(item.get('text', 'unknown'))
+        item_id = item.id if hasattr(item, 'id') else item.get('id', 'unknown')
+
+        # Clean text for filename
+        safe_text = "".join(c for c in text if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        safe_text = safe_text.replace(' ', '_')
+
+        # Limit length and add ID
+        if len(safe_text) > 50:
+            safe_text = safe_text[:50]
+
+        return f"{safe_text}_{item_id}.md"
+
+    def check_file_exists(self, file_path: Path) -> bool:
+        """Check if a file exists.
+
+        Simple utility to check file existence with proper error handling.
+
+        Args:
+            file_path: Path to check for existence.
+
+        Returns:
+            bool: True if file exists, False otherwise.
+        """
+        try:
+            return file_path.exists() and file_path.is_file()
+        except Exception as e:
+            logging.error(f"Error checking file existence {file_path}: {e}")
+            return False
+
+    def get_existing_files(self, directory: Path, items: List[SidebarItem]) -> List[Path]:
+        """Get list of existing files for given items.
+
+        Checks which items already have corresponding output files in the
+        specified directory.
+
+        Args:
+            directory: Directory to check for existing files.
+            items: List of sidebar items to check.
+
+        Returns:
+            List[Path]: List of existing file paths.
+        """
+        existing_files = []
+
+        for item in items:
+            filename = self.get_output_filename(item)
+            file_path = directory / filename
+
+            if self.check_file_exists(file_path):
+                existing_files.append(file_path)
+
+        return existing_files
 
     async def save_markdown(
         self,
