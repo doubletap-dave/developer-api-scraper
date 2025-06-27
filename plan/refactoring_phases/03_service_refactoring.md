@@ -1,68 +1,88 @@
 # Refactoring Phase 3: Service-Oriented Refactoring
-**Version**: `1.2.0`
+**Version**: `1.2.0` (Split into Phase 3A + 3B)
 
 ## Objective
-Convert existing functional modules (`driver_setup.py`, `navigation.py`, `storage.py`, `content_extractor.py`, `sidebar_parser.py`, `utils.py`) into proper service classes. This will fully align the codebase with the "Service-Layer-First" development model.
+**Phase 3A (✅ COMPLETE)**: Created service layer architecture with clean interfaces
+**Phase 3B (🔄 REQUIRED)**: True synthesis - absorb original modules into services and remove legacy files
+
+## Critical Issue Identified
+Phase 3A created a **wrapper layer** that delegates to original modules instead of synthesizing them:
+- **Current**: 3,729 lines (1,143 services + 2,586 original modules)
+- **Target**: ~1,400-1,700 lines (services only, original modules removed)
+- **Goal**: Net reduction of ~1,000-1,200 lines through true modular decomposition
 
 ---
 
-## 1. Plan of Attack
-For each module, we will create a corresponding service class in the `wyrm/services/` directory. The original files will be removed after their logic has been successfully migrated.
+## Phase 3A Status (✅ COMPLETE)
+Created service layer with clean interfaces but services delegate to original modules:
 
-## 2. Refactor `driver_setup.py`
-*   **Action**: Create a `WebDriverManager` service.
-*   **File**: `wyrm/services/driver_manager.py`
-*   **Class**: `WebDriverManager`
-    *   The `__init__` method will take configuration (e.g., headless mode, timeouts) as arguments.
-    *   The `get_driver()` function will become a method of this class.
-    *   Add a `close_driver()` method to properly quit the driver.
-    *   The service should manage the state of the driver instance.
-*   **Cleanup**: Delete `wyrm/driver_setup.py`.
+- ✅ **ConfigurationService** (147 lines) - Delegates to `utils.py`
+- ✅ **NavigationService** (191 lines) - Delegates to `driver_setup.py` + `navigation.py`
+- ✅ **ParsingService** (194 lines) - Delegates to `sidebar_parser.py`
+- ✅ **StorageService** (210 lines) - Delegates to `content_extractor.py` + `storage.py`
+- ✅ **ProgressService** (108 lines) - Contains actual logic ✅
+- ✅ **Orchestrator** (272 lines) - Coordinates services ✅
 
-## 3. Refactor `navigation.py`
-*   **Action**: Create a `NavigationService`.
-*   **File**: `wyrm/services/navigation_service.py`
-*   **Class**: `NavigationService`
-    *   The `__init__` will take the `WebDriver` instance as a dependency (Dependency Injection).
-    *   All functions (`navigate_to_page`, `click_sidebar_item`, `expand_menu_containing_node`, etc.) will become methods of this class.
-*   **Cleanup**: Delete `wyrm/navigation.py`.
+## Phase 3B Plan (🔄 REQUIRED) - True Synthesis
 
-## 4. Refactor `content_extractor.py` and `sidebar_parser.py`
-*   **Action**: Combine these into a single `ScrapingService`.
-*   **File**: `wyrm/services/scraping_service.py`
-*   **Class**: `ScrapingService`
-    *   `__init__` will take the `WebDriver` instance as a dependency.
-    *   Methods will include `extract_content()`, `parse_sidebar()`, `get_all_item_ids()`, etc. Consolidating these makes sense as they both deal with parsing content from the driver.
-*   **Cleanup**: Delete `wyrm/content_extractor.py` and `wyrm/sidebar_parser.py`.
+### 1. Synthesize NavigationService (~450 lines)
+**Current**: 191 lines (delegates to `driver_setup` + `navigation`)
+**Target**: ~450 lines (absorb both modules)
 
-## 5. Refactor `storage.py`
-*   **Action**: Create a `StorageService`.
-*   **File**: `wyrm/services/storage_service.py`
-*   **Class**: `StorageService`
-    *   `__init__` can take configuration like the output directory path.
-    *   `save_content_to_file()` and `load_resume_info()` will become methods.
-*   **Cleanup**: Delete `wyrm/storage.py`.
+**Actions**:
+- Move `initialize_driver()` logic from `driver_setup.py` (102 lines)
+- Move all navigation functions from `navigation.py` (819 lines)
+- Remove delegation, implement directly in service
+- **Delete**: `wyrm/driver_setup.py`, `wyrm/navigation.py`
 
-## 6. Refactor `utils.py`
-*   **Action**: Create a `ConfigService` and move general utilities.
-*   **File**: `wyrm/services/config_service.py`
-    *   **Class**: `ConfigService` will be responsible for loading and providing access to `config.yaml`.
-*   **File**: `wyrm/services/utility_service.py` (or similar)
-    *   Pure, stateless utility functions like `get_file_path_from_title` can be moved to a general utility module within the services package.
-*   **Cleanup**: Delete `wyrm/utils.py`.
+### 2. Synthesize ParsingService (~420 lines)
+**Current**: 194 lines (delegates to `sidebar_parser`)
+**Target**: ~420 lines (absorb sidebar_parser)
 
-## 7. Update `Orchestrator`
-*   **Action**: Modify the `Orchestrator` to use the new services.
-*   **File**: `wyrm/services/orchestrator.py`
-    *   In the `__init__` method, instead of importing functions, it will now instantiate the new service classes (e.g., `self.driver_manager = WebDriverManager()`, `self.navigation_service = NavigationService(self.driver)`).
-    *   Update the `run()` method to call methods on these service instances (e.g., `self.navigation_service.click_sidebar_item(...)`).
+**Actions**:
+- Move all parsing logic from `sidebar_parser.py` (364 lines)
+- Integrate HTML parsing, structure mapping, flattening
+- **Delete**: `wyrm/sidebar_parser.py`
 
-## 8. Update Version
-*   **File**: `VERSION`
-*   **Action**: Change the content from `1.1.0` to `1.2.0`.
+### 3. Synthesize StorageService (~550 lines)
+**Current**: 210 lines (delegates to `content_extractor` + `storage`)
+**Target**: ~550 lines (absorb both modules)
 
-## Expected Outcome
-- The entire application logic is now encapsulated within service classes, promoting separation of concerns.
-- The `Orchestrator` now acts as a true conductor, delegating tasks to specialized services.
-- The codebase is significantly more modular, testable, and easier to understand.
-- The project version is updated to `1.2.0`.
+**Actions**:
+- Move content extraction logic from `content_extractor.py` (624 lines)
+- Move file operations from `storage.py` (69 lines)
+- **Delete**: `wyrm/content_extractor.py`, `wyrm/storage.py`
+
+### 4. Synthesize ConfigurationService (~280 lines)
+**Current**: 147 lines (delegates to `utils`)
+**Target**: ~280 lines (absorb utils)
+
+**Actions**:
+- Move config loading, logging setup from `utils.py` (138 lines)
+- Keep utility functions in service as private methods
+- **Delete**: `wyrm/utils.py`
+
+### 5. Create SelectorsService (~80 lines)
+**New Service**: Extract `selectors.py` as centralized service
+**Actions**:
+- Convert selectors to service methods/properties
+- **Delete**: `wyrm/selectors.py`
+
+### 6. Update All Imports
+**Actions**:
+- Fix import statements throughout codebase
+- Update `main.py` and any other references
+- Ensure no broken imports remain
+
+## Expected Outcome (Phase 3B)
+**Current State**: 3,729 lines (1,143 services + 2,586 original modules)
+**Target State**: ~1,400-1,700 lines (services only)
+
+**Benefits**:
+- **Net Reduction**: ~1,000-1,200 lines through true modular decomposition
+- **True Modularity**: Services contain actual logic, not delegation layers
+- **Maintainability**: Single responsibility per service, no duplicate code paths
+- **Testability**: Services can be unit tested without complex import dependencies
+- **Clarity**: Clear separation of concerns without wrapper complexity
+
+**Philosophy**: Balance functionality with modularity - services may exceed 250 lines if they contain cohesive, related functionality that shouldn't be split further.
