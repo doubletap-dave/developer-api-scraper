@@ -288,10 +288,10 @@ Wyrm is built with a modular architecture:
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
-- Built for extracting Dell PowerFlex Block API documentation
+- Built for extracting Dell API documentation, just update the target
 - Uses Selenium WebDriver for robust web navigation
 - Rich library for beautiful progress bars and logging
