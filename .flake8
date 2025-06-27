@@ -9,4 +9,4 @@ docstring-convention = google
 # Naming conventions
 # B008: Do not perform function calls in argument defaults.
 # B010: Do not call setattr with a constant attribute value.
-extend-select = B008, B010 
+extend-select = B008, B010

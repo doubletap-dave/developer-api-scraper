@@ -54,10 +54,10 @@ async def navigate_to_url(driver: WebDriver, url: str, timeout: int = 10):
     try:
         driver.get(url)
         logging.info(f"Successfully navigated to {url}")
-        
+
         # Add a small delay to allow page to start loading
         await asyncio.sleep(2.0)
-        
+
         # Wait for sidebar to appear
         await wait_for_sidebar(driver, timeout)
     except TimeoutException as e:
@@ -99,7 +99,7 @@ def wait_for_element(
 async def wait_for_sidebar(driver: WebDriver, timeout: int = 15) -> WebElement:
     """Wait specifically for the sidebar container element with retry logic."""
     logging.info(f"Waiting up to {timeout}s for sidebar container...")
-    
+
     # First, wait for the page to be in a ready state
     try:
         WebDriverWait(driver, 10).until(
@@ -108,10 +108,10 @@ async def wait_for_sidebar(driver: WebDriver, timeout: int = 15) -> WebElement:
         logging.debug("Page ready state is complete.")
     except TimeoutException:
         logging.warning("Page ready state timeout, but continuing...")
-    
+
     # Add a small delay for Angular/React to initialize
     await asyncio.sleep(1.0)
-    
+
     try:
         sidebar = wait_for_element(
             driver,
@@ -129,14 +129,14 @@ async def wait_for_sidebar(driver: WebDriver, timeout: int = 15) -> WebElement:
             current_url = driver.current_url
             body_elements = driver.find_elements(selectors.By.TAG_NAME, "body")
             logging.error(f"Sidebar timeout - Page title: '{page_title}', URL: '{current_url}', Body elements: {len(body_elements)}")
-            
+
             # Check for any elements that might indicate the page loaded
             app_elements = driver.find_elements(selectors.By.CSS_SELECTOR, "app-api-doc-item")
             sidebar_alts = driver.find_elements(selectors.By.CSS_SELECTOR, "div[class*='sidebar']")
             logging.error(f"Found {len(app_elements)} app-api-doc-item elements, {len(sidebar_alts)} sidebar-like elements")
         except Exception as debug_e:
             logging.error(f"Could not get debug info: {debug_e}")
-        
+
         log_err = f"Sidebar container did not appear within {timeout} seconds."
         logging.error(log_err)
         raise
@@ -750,52 +750,52 @@ async def expand_menu_containing_node(driver: WebDriver, menu_text: str, target_
     If multiple menus have the same name, tries each one until the target node is found.
     """
     logging.debug(f"[expand_menu_containing_node] Looking for menu '{menu_text}' containing node '{target_node_id}'")
-    
+
     # Find all menus with the specified text
     menu_xpath = f"//li[contains(@class, 'toc-item') and .//div[normalize-space(.)='{menu_text}']]"
-    
+
     try:
         menu_elements = driver.find_elements(selectors.By.XPATH, menu_xpath)
         logging.debug(f"[expand_menu_containing_node] Found {len(menu_elements)} menu(s) with text '{menu_text}'")
-        
+
         if not menu_elements:
             logging.error(f"[expand_menu_containing_node] No menus found with text '{menu_text}'")
             return False
-            
+
         for i, menu_element in enumerate(menu_elements):
             logging.debug(f"[expand_menu_containing_node] Trying menu {i+1}/{len(menu_elements)} with text '{menu_text}'")
-            
+
             # Check if this menu is already expanded and contains our target
             target_selector = f"li[id='{target_node_id}']"
             existing_targets = driver.find_elements(selectors.By.CSS_SELECTOR, target_selector)
-            
+
             if existing_targets:
                 logging.info(f"[expand_menu_containing_node] Found target node '{target_node_id}' - menu '{menu_text}' (#{i+1}) is already expanded")
                 return True
-                
+
             # Try to expand this specific menu
             try:
                 # Check if menu has a collapsed icon (chevron-right)
                 collapsed_icon = menu_element.find_elements(selectors.By.XPATH, ".//i[contains(@class, 'dds__icon--chevron-right')]")
-                
+
                 if collapsed_icon:
                     logging.debug(f"[expand_menu_containing_node] Expanding menu '{menu_text}' (#{i+1})")
-                    
+
                     # Scroll into view and click
                     driver.execute_script("arguments[0].scrollIntoView(false);", collapsed_icon[0])
                     await asyncio.sleep(0.1)
-                    
+
                     try:
                         collapsed_icon[0].click()
                         logging.debug(f"[expand_menu_containing_node] Clicked expander for menu '{menu_text}' (#{i+1})")
                     except ElementClickInterceptedException:
                         logging.debug(f"[expand_menu_containing_node] Click intercepted, trying JavaScript click")
                         driver.execute_script("arguments[0].click();", collapsed_icon[0])
-                    
+
                     # Wait for loader to disappear
                     await wait_for_loader_to_disappear(driver, timeout=10)
                     await asyncio.sleep(expand_delay)
-                    
+
                     # Check if target node is now present
                     target_elements = driver.find_elements(selectors.By.CSS_SELECTOR, target_selector)
                     if target_elements:
@@ -805,14 +805,14 @@ async def expand_menu_containing_node(driver: WebDriver, menu_text: str, target_
                         logging.debug(f"[expand_menu_containing_node] Target node '{target_node_id}' not found in menu '{menu_text}' (#{i+1})")
                 else:
                     logging.debug(f"[expand_menu_containing_node] Menu '{menu_text}' (#{i+1}) appears to already be expanded")
-                    
+
             except Exception as e:
                 logging.warning(f"[expand_menu_containing_node] Error expanding menu '{menu_text}' (#{i+1}): {e}")
                 continue
-                
+
         logging.error(f"[expand_menu_containing_node] Target node '{target_node_id}' not found in any '{menu_text}' menu after trying {len(menu_elements)} menu(s)")
         return False
-        
+
     except Exception as e:
         logging.error(f"[expand_menu_containing_node] Error finding menus with text '{menu_text}': {e}")
         return False
