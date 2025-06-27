@@ -5,13 +5,15 @@ specialized services for configuration, navigation, parsing, storage, and progre
 """
 
 
+import asyncio
 import sys
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import structlog
 
 from wyrm.models.config import AppConfig
-from wyrm.models.scrape import SidebarStructure
+from wyrm.models.scrape import SidebarStructure, SidebarItem
 from wyrm.services.configuration_service import ConfigurationService
 from wyrm.services.navigation import NavigationService
 from wyrm.services.parsing import ParsingService
@@ -144,8 +146,10 @@ class Orchestrator:
 
         except KeyboardInterrupt:
             self.logger.warning("User interrupted execution")
+            raise
         except Exception as e:
             self.logger.exception("An unexpected error occurred", error=str(e))
+            raise
         finally:
             await self._cleanup()
 
@@ -182,14 +186,58 @@ class Orchestrator:
         Raises:
             Exception: If structure loading/parsing fails.
         """
-        structure_filepath = self.parsing_service.get_structure_filepath(config_values)
+        # Use debug directory for structure file only in debug mode
+        if save_structure:
+            structure_filepath = self.parsing_service.get_structure_filepath(config_values)
+        else:
+            # In normal mode, use logs directory for structure file
+            structure_filepath = Path("logs") / "sidebar_structure.json"
 
         # Try to load existing structure first
         sidebar_structure = self.parsing_service.load_existing_structure(
             structure_filepath
         )
 
-        if not sidebar_structure or force:
+        # Check if structure is valid and has usable items
+        structure_is_valid = False
+        if sidebar_structure and not force:
+            try:
+                # Convert to SidebarStructure model to check validity
+                temp_structure = SidebarStructure(
+                    structured_data=sidebar_structure.get('structured_data', []),
+                    items=[SidebarItem(**item) for item in sidebar_structure.get('items', [])]
+                )
+                valid_items = temp_structure.valid_items
+                total_items = len(sidebar_structure.get('items', []))
+
+                # Require a reasonable number of valid items for a complete structure
+                # If we have many total items but few valid ones, it's likely an incomplete parse
+                min_valid_items = 10  # Expect at least 10 valid items for a complete API docs structure
+                valid_item_ratio = len(valid_items) / max(total_items, 1)
+
+                if len(valid_items) >= min_valid_items and valid_item_ratio > 0.1:
+                    structure_is_valid = True
+                    self.logger.info(
+                        "Using existing structure with sufficient valid items",
+                        valid_items_count=len(valid_items),
+                        total_items=total_items,
+                        valid_ratio=f"{valid_item_ratio:.2%}"
+                    )
+                else:
+                    self.logger.info(
+                        "Existing structure insufficient, will re-parse",
+                        total_items=total_items,
+                        valid_items_count=len(valid_items),
+                        valid_ratio=f"{valid_item_ratio:.2%}",
+                        reason="too few valid items" if len(valid_items) < min_valid_items else "low valid ratio"
+                    )
+            except Exception as e:
+                self.logger.warning(
+                    "Failed to validate existing structure, will re-parse",
+                    error=str(e)
+                )
+
+        if not structure_is_valid:
             # Need to parse live
             sidebar_structure = await self._perform_live_parsing(
                 config, config_values, save_structure, save_html,
@@ -235,9 +283,29 @@ class Orchestrator:
         """
         # Initialize driver and navigate
         await self.navigation_service.initialize_driver(config)
+        self.logger.info("Navigating to target URL and waiting for sidebar...")
         sidebar_html = await self.navigation_service.navigate_and_wait(
             config, config_values
         )
+
+        self.logger.info("Performing menu expansion to reveal all items...")
+        await self.navigation_service.expand_all_menus_comprehensive()
+
+        self.logger.info("Extracting fully expanded sidebar structure...")
+        # Get the updated sidebar HTML after expansion
+        expanded_sidebar_html = await self.navigation_service.get_sidebar_html()
+
+        # Log comparison for debugging
+        initial_html_length = len(sidebar_html)
+        expanded_html_length = len(expanded_sidebar_html)
+        self.logger.info(
+            "Menu expansion completed",
+            initial_html_length=initial_html_length,
+            expanded_html_length=expanded_html_length
+        )
+
+        # Use the expanded HTML for parsing
+        sidebar_html = expanded_sidebar_html
 
         # Save debug files if requested
         if save_html:
@@ -250,11 +318,7 @@ class Orchestrator:
             sidebar_html
         )
 
-        if save_structure:
-            await self.parsing_service.save_debug_structure(
-                sidebar_structure, config_values, structure_filename
-            )
-
+        # Save structure to the determined filepath (debug or normal location)
         self.storage_service.save_structure_to_output(
             sidebar_structure, structure_filepath
         )
@@ -333,10 +397,27 @@ class Orchestrator:
 
         # Filter items for processing
         items_to_process = self.parsing_service.filter_items_for_processing(
-            valid_items, test_item_id, max_items
+            valid_items, max_items, test_item_id
         )
 
         self.logger.info("Processing items", count=len(items_to_process))
+
+        # CRITICAL: Ensure NavigationService is initialized before processing items
+        # This must happen regardless of whether we did live parsing or loaded from cache
+        if not self.navigation_service.get_driver():
+            self.logger.info("Initializing NavigationService for item processing")
+            await self.navigation_service.initialize_driver(self._config)
+            self.logger.info("NavigationService initialized successfully")
+
+            # When using cached data, we need to navigate to the site and expand menus
+            # since the browser session is fresh and menus are collapsed
+            self.logger.info("Navigating to site and expanding menus for cached data processing...")
+            await self.navigation_service.navigate_and_wait(self._config, config_values)
+
+            # Expand all menus so items are accessible
+            self.logger.info("Expanding all menus to make cached items accessible...")
+            await self.navigation_service.expand_all_menus_comprehensive()
+            self.logger.info("Menu expansion completed - items should now be accessible")
 
         # Process items with progress tracking
         await self._process_items_with_progress(items_to_process, config_values)
@@ -363,23 +444,26 @@ class Orchestrator:
         """
         progress = self.progress_service.create_progress_display()
 
-        with progress:
-            task_id = progress.add_task(
-                "Processing items...", total=len(items_to_process)
-            )
+        with self.progress_service._suppress_console_logging():
+            with progress:
+                task_id = progress.add_task(
+                    "Processing items...", total=len(items_to_process)
+                )
 
-            for item in items_to_process:
-                try:
-                    await self._process_single_item(
-                        item, config_values, progress, task_id
-                    )
-                except Exception as e:
-                    self.logger.error(
-                        "Failed to process item",
-                        item_id=item.get('id', 'unknown'),
-                        error=str(e)
-                    )
-                    continue
+                for item in items_to_process:
+                    try:
+                        await self._process_single_item(
+                            item, config_values, progress, task_id
+                        )
+                    except Exception as e:
+                        # Log to file only during progress display
+                        self.logger.error(
+                            "Failed to process item",
+                            item_id=getattr(item, 'id', 'unknown'),
+                            item_text=getattr(item, 'text', 'unknown'),
+                            error=str(e)
+                        )
+                        continue
 
     async def _process_single_item(
         self,
@@ -403,10 +487,11 @@ class Orchestrator:
             None
 
         Raises:
-            Exception: If item processing fails.
+            Exception: If item processing fails after retries.
         """
         # Handle both dict and SidebarItem objects
         item_text = item.text if hasattr(item, 'text') else item.get('text', 'Unknown')
+        item_id = getattr(item, 'id', None) or item.get('id', 'unknown') if isinstance(item, dict) else 'unknown'
 
         progress.update(task_id, description=f"Processing: {item_text}")
 
@@ -422,17 +507,87 @@ class Orchestrator:
                 progress.advance(task_id)
                 return
 
-        # Navigate to item and extract content
-        await self.navigation_service.navigate_to_item(item)
-        content = await self.storage_service.extract_content_for_item(item)
+        # Process with retry logic for WebDriver failures
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                # Verify NavigationService is ready before proceeding
+                if not self.navigation_service.get_driver():
+                    if attempt == 0:
+                        # First attempt - reinitialize driver
+                        self.logger.warning(
+                            "WebDriver not available, reinitializing...",
+                            item_text=item_text
+                        )
+                        await self.navigation_service.initialize_driver(self._config)
+                    else:
+                        raise RuntimeError(
+                            f"NavigationService failed to initialize after retries for item: {item_text}"
+                        )
 
-        # Save content to file
-        await self.storage_service.save_content_to_file(
-            content, item, config_values
-        )
+                # Navigate to item and extract/save content
+                await self.navigation_service.navigate_to_item(item)
 
-        progress.advance(task_id)
-        self.logger.info("Completed processing", item_text=item_text)
+                # Get the driver from navigation service to pass to storage service
+                driver = self.navigation_service.get_driver()
+
+                # Extract and save content in one step
+                await self.storage_service.save_content_for_item(
+                    item, driver, config_values
+                )
+
+                progress.advance(task_id)
+                self.logger.info("Completed processing", item_text=item_text)
+                return  # Success - exit retry loop
+
+            except Exception as e:
+                error_msg = str(e)
+                is_webdriver_error = any(indicator in error_msg.lower() for indicator in [
+                    'connection refused', 'session', 'webdriver', 'timeout',
+                    'element not found', 'no such element', 'stale element'
+                ])
+
+                if is_webdriver_error and attempt < max_retries:
+                    self.logger.warning(
+                        f"WebDriver error on attempt {attempt + 1}, retrying...",
+                        item_text=item_text,
+                        item_id=item_id,
+                        error=error_msg[:200],  # Truncate long error messages
+                        attempt=attempt + 1,
+                        max_retries=max_retries
+                    )
+
+                    # Clean up and reinitialize WebDriver
+                    try:
+                        await self.navigation_service.cleanup(self._config)
+                    except Exception:
+                        pass  # Ignore cleanup errors
+
+                    # Wait before retry
+                    await asyncio.sleep(2.0 * (attempt + 1))  # Progressive backoff
+
+                    try:
+                        await self.navigation_service.initialize_driver(self._config)
+                    except Exception as init_error:
+                        self.logger.error(
+                            "Failed to reinitialize WebDriver",
+                            item_text=item_text,
+                            init_error=str(init_error)
+                        )
+                        if attempt == max_retries:
+                            raise
+                        continue
+                else:
+                    # Non-WebDriver error or max retries reached
+                    self.logger.error(
+                        "Failed to process item after retries",
+                        item_text=item_text,
+                        item_id=item_id,
+                        error=error_msg[:200],
+                        attempt=attempt + 1,
+                        is_webdriver_error=is_webdriver_error
+                    )
+                    raise
 
     async def _cleanup(self) -> None:
         """Perform cleanup operations.

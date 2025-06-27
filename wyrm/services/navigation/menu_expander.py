@@ -123,14 +123,14 @@ class MenuExpander:
                 EC.presence_of_element_located((By.XPATH, collapsed_icon_xpath))
             )
 
-            logging.info(f"Expanding menu: '{safe_menu_text}'")
+            # Menu expansion happening - logging reduced for cleaner progress display
             self.driver.execute_script("arguments[0].scrollIntoView(false);", collapsed_icon)
             await asyncio.sleep(0.1)
             collapsed_icon.click()
 
             await self._wait_for_loader_to_disappear(timeout=timeout)
             await asyncio.sleep(expand_delay)
-            logging.info(f"Finished expanding menu '{safe_menu_text}'")
+            # Menu expansion completed
             clicked_successfully = True
 
         except ElementClickInterceptedException:
@@ -188,6 +188,61 @@ class MenuExpander:
         except Exception as e:
             logging.warning(f"Error expanding menu containing node: {e}")
             return False
+
+    async def expand_all_menus_comprehensive(self, timeout: int = 60) -> None:
+        """Expand all collapsible menus in the sidebar.
+
+        Simple approach: find all collapsed menu icons and click them.
+        No complex loops or timeouts needed.
+        """
+        logging.info("Starting menu expansion to reveal all items...")
+
+        try:
+            # Find all collapsed menu icons
+            collapsed_icons = self.driver.find_elements(*self.selectors.EXPANDER_ICON)
+
+            if not collapsed_icons:
+                logging.info("No collapsed menus found")
+                return
+
+            logging.info(f"Found {len(collapsed_icons)} collapsed menus to expand")
+
+            # Click each collapsed icon
+            expanded_count = 0
+            for icon in collapsed_icons:
+                try:
+                    # Check if icon is still displayed
+                    if not icon.is_displayed():
+                        continue
+
+                    # Scroll into view and click
+                    self.driver.execute_script("arguments[0].scrollIntoView(false);", icon)
+                    await asyncio.sleep(0.1)
+
+                    try:
+                        icon.click()
+                        expanded_count += 1
+                    except ElementClickInterceptedException:
+                        # Try JavaScript click if regular click fails
+                        self.driver.execute_script("arguments[0].click();", icon)
+                        expanded_count += 1
+
+                    # Brief pause between clicks
+                    await asyncio.sleep(0.2)
+
+                except Exception as e:
+                    logging.debug(f"Failed to expand menu icon: {e}")
+                    continue
+
+            logging.info(f"Expanded {expanded_count} menus")
+
+            # Wait for any loading to complete
+            await self._wait_for_loader_to_disappear(timeout=5)
+
+        except Exception as e:
+            logging.error(f"Error during menu expansion: {e}")
+
+        logging.info("Menu expansion completed")
 
     async def _wait_for_loader_to_disappear(self, timeout: int = 10):
         """Wait for the 'Processing, please wait...' overlay to disappear."""

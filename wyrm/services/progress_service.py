@@ -4,8 +4,12 @@ This service handles progress reporting, statistics tracking, and user feedback
 during the scraping process using Rich progress bars and logging.
 """
 
+import logging
 import structlog
+from contextlib import contextmanager
+from typing import Generator
 
+from rich.console import Console
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -204,3 +208,29 @@ class ProgressService:
         self.error_count = 0
         self.no_content_count = 0
         self.total_items = 0
+        self._console = Console()
+
+    @contextmanager
+    def _suppress_console_logging(self) -> Generator[None, None, None]:
+        """Context manager to temporarily suppress console logging during progress display.
+
+        This prevents logging output from interfering with the Rich progress bar display
+        by temporarily removing the console handler from the root logger.
+        """
+        # Get the root logger
+        root_logger = logging.getLogger()
+
+        # Find and temporarily remove console handlers
+        console_handlers = []
+        for handler in root_logger.handlers[:]:
+            if isinstance(handler, logging.StreamHandler) and hasattr(handler, 'stream'):
+                if handler.stream.name in ('<stdout>', '<stderr>'):
+                    console_handlers.append(handler)
+                    root_logger.removeHandler(handler)
+
+        try:
+            yield
+        finally:
+            # Restore console handlers
+            for handler in console_handlers:
+                root_logger.addHandler(handler)

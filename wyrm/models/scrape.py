@@ -79,8 +79,8 @@ class SidebarStructure(BaseModel):
 
     @property
     def valid_items(self) -> List[SidebarItem]:
-        """Get items that have IDs (valid for processing)."""
-        return [item for item in self.items if item.id is not None]
+        """Get items that are valid for processing (content items with IDs)."""
+        return [item for item in self.items if item.id is not None and item.type == "item"]
 
     @property
     def menu_items(self) -> List[SidebarItem]:

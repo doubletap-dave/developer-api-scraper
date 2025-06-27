@@ -203,6 +203,7 @@ class ConfigurationService:
                     config.delays,
                     'post_click_noheadless',
                     1.0),
+                "max_expand_attempts": config.behavior.max_expand_attempts,
                 "default_html_filename": (
                     config.debug_settings.save_html_filename
                 ),

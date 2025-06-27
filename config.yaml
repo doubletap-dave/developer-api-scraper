@@ -10,9 +10,9 @@ webdriver:
 # Delays and Timeouts (in seconds)
 delays:
   # Base delays (used in headless mode or if no overrides are set)
-  navigation: 10       # Timeout for initial page navigation
-  element_wait: 10     # Default timeout for waiting for generic elements (if used)
-  sidebar_wait: 15     # Specific timeout for waiting for sidebar container
+  navigation: 15       # Timeout for initial page navigation
+  element_wait: 15     # Default timeout for waiting for generic elements (if used)
+  sidebar_wait: 30     # Specific timeout for waiting for sidebar container
   expand_menu: 0.5     # Delay between clicking menu expanders
   post_expand_settle: 1.0 # Delay after expansion loop before parsing
   # post_click: 0.5      # (For Phase 3) Delay after clicking a sidebar item

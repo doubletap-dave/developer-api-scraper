@@ -14,10 +14,24 @@ import structlog
 
 
 class LoggingService:
-    """Service for configuring structured logging with dual output streams.
+    """Service for configuring structured logging with multiple output streams.
 
     Provides both human-readable console output for development and
-    machine-readable JSON file output for analysis and monitoring.
+    machine-readable JSON file outputs for analysis and monitoring.
+
+    Creates three separate log files:
+    - wyrm.jsonl: Normal operational logs (INFO and above)
+    - wyrm-trace.jsonl: Complete trace logs (DEBUG and above) for debugging
+    - wyrm-error.jsonl: Error logs only (ERROR and above) for monitoring
+
+    All JSON log files use JSONL (JSON Lines) format where each line is a
+    separate JSON object. This format is supported by most log ingestion
+    systems including ELK stack, Fluentd, and others.
+
+    To parse JSONL format:
+    - Each line is a valid JSON object
+    - Parse line by line: `[json.loads(line) for line in open('log.jsonl')]`
+    - Many log analysis tools natively support JSONL/NDJSON format
     """
 
     def __init__(self) -> None:
@@ -27,13 +41,18 @@ class LoggingService:
     def setup_logging(
         self,
         log_level: str = "INFO",
-        log_file_path: Optional[str] = None
+        log_dir: Optional[str] = None
     ) -> None:
-        """Configure structured logging with console and file handlers.
+        """Configure structured logging with console and multiple file handlers.
+
+        Creates three separate log files:
+        - wyrm.jsonl: Normal operational logs (INFO and above)
+        - wyrm-trace.jsonl: Complete trace logs (DEBUG and above)
+        - wyrm-error.jsonl: Error logs only (ERROR and above)
 
         Args:
             log_level: The minimum log level for console output (INFO, DEBUG, etc.)
-            log_file_path: Path to the JSON log file. Defaults to 'logs/wyrm.json'
+            log_dir: Directory for log files. Defaults to 'logs'
 
         Raises:
             ValueError: If log_level is not a valid logging level
@@ -46,13 +65,18 @@ class LoggingService:
         if not isinstance(numeric_level, int):
             raise ValueError(f"Invalid log level: {log_level}")
 
-        # Set default log file path
-        if log_file_path is None:
-            log_file_path = "logs/wyrm.json"
+        # Set default log directory
+        if log_dir is None:
+            log_dir = "logs"
 
         # Ensure log directory exists
-        log_dir = Path(log_file_path).parent
-        log_dir.mkdir(parents=True, exist_ok=True)
+        log_dir_path = Path(log_dir)
+        log_dir_path.mkdir(parents=True, exist_ok=True)
+
+        # Define log file paths
+        normal_log_path = log_dir_path / "wyrm.jsonl"
+        trace_log_path = log_dir_path / "wyrm-trace.jsonl"
+        error_log_path = log_dir_path / "wyrm-error.jsonl"
 
         # Configure standard library logging
         logging.basicConfig(
@@ -80,13 +104,29 @@ class LoggingService:
         console_handler = logging.StreamHandler()
         console_handler.setLevel(numeric_level)
 
-        # Create file handler with JSON format
-        file_handler = logging.handlers.RotatingFileHandler(
-            log_file_path,
+        # Create normal log handler (INFO and above)
+        normal_handler = logging.handlers.RotatingFileHandler(
+            normal_log_path,
             maxBytes=10 * 1024 * 1024,  # 10MB
             backupCount=5
         )
-        file_handler.setLevel(logging.DEBUG)
+        normal_handler.setLevel(logging.INFO)
+
+        # Create trace log handler (DEBUG and above - everything)
+        trace_handler = logging.handlers.RotatingFileHandler(
+            trace_log_path,
+            maxBytes=10 * 1024 * 1024,  # 10MB
+            backupCount=5
+        )
+        trace_handler.setLevel(logging.DEBUG)
+
+        # Create error log handler (ERROR and above only)
+        error_handler = logging.handlers.RotatingFileHandler(
+            error_log_path,
+            maxBytes=10 * 1024 * 1024,  # 10MB
+            backupCount=5
+        )
+        error_handler.setLevel(logging.ERROR)
 
         # Configure structlog
         structlog.configure(
@@ -111,13 +151,17 @@ class LoggingService:
 
         # Apply formatters to handlers
         console_handler.setFormatter(console_formatter)
-        file_handler.setFormatter(json_formatter)
+        normal_handler.setFormatter(json_formatter)
+        trace_handler.setFormatter(json_formatter)
+        error_handler.setFormatter(json_formatter)
 
         # Get root logger and add handlers
         root_logger = logging.getLogger()
         root_logger.handlers.clear()  # Clear any existing handlers
         root_logger.addHandler(console_handler)
-        root_logger.addHandler(file_handler)
+        root_logger.addHandler(normal_handler)
+        root_logger.addHandler(trace_handler)
+        root_logger.addHandler(error_handler)
 
         self._configured = True
 
@@ -126,8 +170,9 @@ class LoggingService:
         logger.info(
             "Logging configured successfully",
             console_level=log_level,
-            file_level="DEBUG",
-            log_file=log_file_path,
+            normal_log=str(normal_log_path),
+            trace_log=str(trace_log_path),
+            error_log=str(error_log_path),
         )
 
     def get_logger(self, name: str) -> structlog.stdlib.BoundLogger:

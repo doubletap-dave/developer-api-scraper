@@ -28,6 +28,35 @@ class StorageService:
         self.file_operations = FileOperations()
         self.resume_manager = ResumeManager()
 
+    def get_output_path(self, item, base_output_dir: Path) -> Path:
+        """Get the output file path for an item.
+
+        Args:
+            item: Item (SidebarItem model or dict) containing metadata
+            base_output_dir: Base output directory
+
+        Returns:
+            Path: Complete file path for the output file
+        """
+        # Handle both SidebarItem models and dict items for backward compatibility
+        if hasattr(item, 'text'):
+            item_text = item.text
+            header = item.header
+            menu = item.menu
+        else:
+            item_text = item.get("text", "Unknown Item")
+            header = item.get("header")
+            menu = item.get("menu")
+
+        return self.file_operations._get_output_file_path(
+            header=header,
+            menu=menu,
+            item_text=item_text,
+            base_output_dir=base_output_dir
+        )
+
+
+
     async def save_content_for_item(
         self,
         item,
@@ -44,6 +73,10 @@ class StorageService:
         Returns:
             True if content was saved successfully, False otherwise
         """
+        # Verify driver is provided and valid
+        if not driver:
+            raise ValueError("WebDriver instance is required for content extraction")
+
         # Handle both SidebarItem models and dict items for backward compatibility
         if hasattr(item, 'text'):
             item_text = item.text

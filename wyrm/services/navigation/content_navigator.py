@@ -66,29 +66,60 @@ class ContentNavigator:
         logging.debug(f"Attempting to click sidebar item with ID: {item_id}")
 
         try:
-            # Wait for the element to be clickable
-            element = WebDriverWait(self.driver, timeout).until(
-                EC.element_to_be_clickable((By.ID, item_id))
+            # First, find the li element by ID
+            li_element = WebDriverWait(self.driver, timeout).until(
+                EC.presence_of_element_located((By.ID, item_id))
             )
 
             # Scroll element into view
-            self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
+            self.driver.execute_script("arguments[0].scrollIntoView(true);", li_element)
             await asyncio.sleep(0.2)  # Brief pause after scrolling
 
-            # Click the element
-            element.click()
-            logging.debug(f"Successfully clicked item: {item_id}")
+            # Try to find and click the anchor element inside the li
+            try:
+                anchor_element = li_element.find_element(By.TAG_NAME, "a")
+
+                # Wait for the anchor to be clickable
+                WebDriverWait(self.driver, 5).until(
+                    EC.element_to_be_clickable(anchor_element)
+                )
+
+                # Click the anchor element
+                anchor_element.click()
+                logging.debug(f"Successfully clicked anchor inside item: {item_id}")
+
+            except Exception:
+                # Fallback: try clicking the li element directly
+                logging.debug(f"No clickable anchor found, trying li element directly: {item_id}")
+
+                # Wait for the li element to be clickable
+                WebDriverWait(self.driver, 5).until(
+                    EC.element_to_be_clickable(li_element)
+                )
+
+                # Click the li element
+                li_element.click()
+                logging.debug(f"Successfully clicked li element: {item_id}")
 
         except ElementClickInterceptedException:
             logging.warning(f"Click intercepted for {item_id}, trying JavaScript click...")
             try:
-                element = WebDriverWait(self.driver, timeout).until(
+                li_element = WebDriverWait(self.driver, timeout).until(
                     EC.presence_of_element_located((By.ID, item_id))
                 )
-                self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
+                self.driver.execute_script("arguments[0].scrollIntoView(true);", li_element)
                 await asyncio.sleep(0.2)
-                self.driver.execute_script("arguments[0].click();", element)
-                logging.debug(f"Successfully clicked {item_id} using JavaScript")
+
+                # Try JavaScript click on anchor first
+                try:
+                    anchor_element = li_element.find_element(By.TAG_NAME, "a")
+                    self.driver.execute_script("arguments[0].click();", anchor_element)
+                    logging.debug(f"Successfully clicked anchor using JavaScript: {item_id}")
+                except Exception:
+                    # Fallback to JavaScript click on li
+                    self.driver.execute_script("arguments[0].click();", li_element)
+                    logging.debug(f"Successfully clicked li using JavaScript: {item_id}")
+
             except Exception as js_error:
                 logging.error(f"JavaScript click also failed for {item_id}: {js_error}")
                 raise

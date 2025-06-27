@@ -4,6 +4,8 @@ Thin entrypoint that uses Typer for CLI and delegates to the Orchestrator servic
 """
 
 import asyncio
+import signal
+import sys
 from typing import Optional
 
 import typer
@@ -14,97 +16,75 @@ from wyrm.services.logging_service import LoggingService
 
 console = Console()
 
+# Global variable to track the orchestrator for cleanup
+_orchestrator = None
+
 
 def main(
     config: str = typer.Option(
         "config.yaml",
         "--config",
         "-c",
-        help="Path to the configuration file",
+        help="Path to YAML configuration file",
     ),
     headless: Optional[bool] = typer.Option(
         None,
         "--headless/--no-headless",
-        help="Run in headless mode (overrides config)",
+        help="Override browser headless mode setting",
     ),
     log_level: Optional[str] = typer.Option(
         None,
         "--log-level",
         "-l",
-        help="Set logging level (overrides config)",
+        help="Set logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL",
     ),
     save_structure: Optional[str] = typer.Option(
         None,
         "--save-structure",
-        help="Save parsed sidebar structure to debug dir. Optionally specify filename.",
+        help="Save parsed sidebar structure to debug directory",
     ),
     save_html: Optional[str] = typer.Option(
         None,
         "--save-html",
-        help="Save raw sidebar HTML to debug dir. Optionally specify filename.",
+        help="Save raw sidebar HTML to debug directory",
     ),
     debug: bool = typer.Option(
         False,
         "--debug",
-        help="Enable debug: DEBUG logs, save structure/HTML, force non-headless.",
+        help="Enable debug mode: DEBUG logs, save files, visible browser",
     ),
     max_expand_attempts: Optional[int] = typer.Option(
         None,
         "--max-expand-attempts",
-        help="Max menu expansion clicks (for testing/limiting). Overridden by --debug.",
+        help="Maximum menu expansion attempts (for testing)",
     ),
     force: bool = typer.Option(
         False,
         "--force",
-        help="Overwrite existing output files.",
+        help="Overwrite existing output files",
     ),
     test_item_id: Optional[str] = typer.Option(
         None,
         "--test-item-id",
-        help="DEPRECATED (use --max-items=1). Run logic for only this item ID.",
+        help="[DEPRECATED] Process only specified item ID (use --max-items=1)",
     ),
     max_items: Optional[int] = typer.Option(
         None,
         "--max-items",
-        help="Max items to process from sidebar structure (for testing).",
+        help="Maximum number of items to process (for testing)",
     ),
     resume_info: bool = typer.Option(
         False,
         "--resume-info",
-        help="Show resume information (what files exist vs need processing) and exit.",
+        help="Show resume information and exit (no processing)",
     ),
 ) -> None:
     """Scrape developer API documentation with intelligent navigation.
 
-    This command coordinates the entire scraping workflow from configuration
-    loading to final content extraction and storage. It serves as a thin
-    entrypoint that delegates all work to the Orchestrator service.
+    Intelligently navigates documentation sites, expands menus, and extracts
+    content into organized markdown files.
 
-    Args:
-        config: Path to the YAML configuration file containing scraping settings.
-        headless: Override headless browser mode. If None, uses config setting.
-        log_level: Override logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
-        save_structure: Save parsed sidebar structure to debug directory.
-            If provided without value, uses default filename.
-        save_html: Save raw sidebar HTML to debug directory.
-            If provided without value, uses default filename.
-        debug: Enable comprehensive debug mode with DEBUG logging,
-            forced structure/HTML saves, and non-headless browser.
-        max_expand_attempts: Maximum number of menu expansion attempts.
-            Useful for testing or limiting execution time.
-        force: Overwrite existing output files instead of skipping them.
-        test_item_id: DEPRECATED. Process only the specified item ID.
-            Use --max-items=1 instead for testing single items.
-        max_items: Maximum number of items to process from sidebar structure.
-            Useful for testing or partial runs.
-        resume_info: Display resume information showing existing vs missing files,
-            then exit without processing.
-
-    Raises:
-        typer.Exit: With code 1 if interrupted by user or on error.
-
-    Returns:
-        None: Function exits via typer.Exit or completes successfully.
+    Features: Resume capability, debug mode, progress tracking, error handling.
     """
     # Setup logging first (before any other operations)
     logging_service = LoggingService()
@@ -117,6 +97,12 @@ def main(
 
     # Create orchestrator and run workflow
     orchestrator = Orchestrator()
+
+    global _orchestrator
+    _orchestrator = orchestrator
+
+    # Register signal handler for graceful shutdown
+    signal.signal(signal.SIGINT, graceful_exit)
 
     try:
         asyncio.run(
@@ -138,10 +124,36 @@ def main(
         )
     except KeyboardInterrupt:
         console.print("\n[yellow]Operation cancelled by user.[/yellow]")
-        raise typer.Exit(1)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
+
+
+def graceful_exit(signum, frame):
+    """Handle graceful shutdown on SIGINT (Ctrl+C)."""
+    console.print("\n[yellow]Received interrupt signal. Gracefully shutting down...[/yellow]")
+
+    try:
+        if _orchestrator:
+            # Use asyncio to run cleanup if event loop is available
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If loop is running, schedule cleanup and exit
+                    loop.create_task(_orchestrator._cleanup())
+                else:
+                    # If loop is not running, run cleanup directly
+                    asyncio.run(_orchestrator._cleanup())
+            except RuntimeError:
+                # No event loop available, run cleanup in new loop
+                asyncio.run(_orchestrator._cleanup())
+
+        console.print("[green]Cleanup completed successfully.[/green]")
+    except Exception as e:
+        console.print(f"[red]Error during cleanup: {e}[/red]")
+    finally:
+        console.print("[yellow]Exiting application.[/yellow]")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
