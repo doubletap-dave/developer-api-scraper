@@ -49,29 +49,23 @@ async def wait_for_loader_to_disappear(driver: WebDriver, timeout: int = 10):
 
 
 async def navigate_to_url(driver: WebDriver, url: str, timeout: int = 10):
-    """Navigate WebDriver to URL and wait for initial load + loader."""
+    """Navigate to a URL and wait for basic page elements (now async)."""
     logging.info(f"Navigating to URL: {url}")
     try:
         driver.get(url)
-        WebDriverWait(driver, timeout).until(
-            EC.presence_of_element_located((selectors.By.TAG_NAME, "body"))
-        )
         logging.info(f"Successfully navigated to {url}")
-        # Wait for sidebar before checking loader
+        
+        # Add a small delay to allow page to start loading
+        await asyncio.sleep(2.0)
+        
+        # Wait for sidebar to appear
         await wait_for_sidebar(driver, timeout)
-        # Now, wait for any initial loader
-        await wait_for_loader_to_disappear(driver)
-    except TimeoutException:
-        log_err = (
-            f"Timeout ({timeout}s) occurred during navigation or "
-            f"initial waits for {url}"
-        )
+    except TimeoutException as e:
+        log_err = f"Timeout ({timeout}s) occurred during navigation or initial waits for {url}"
         logging.error(log_err)
         raise
     except Exception as e:
-        log_err = (
-            "An error occurred during navigation or initial waits for " f"{url}: {e}"
-        )
+        log_err = f"An unexpected error occurred during navigation to {url}: {e}"
         logging.exception(log_err)
         raise
 
@@ -103,8 +97,21 @@ def wait_for_element(
 
 
 async def wait_for_sidebar(driver: WebDriver, timeout: int = 15) -> WebElement:
-    """Wait specifically for the sidebar container element (now async)."""
+    """Wait specifically for the sidebar container element with retry logic."""
     logging.info(f"Waiting up to {timeout}s for sidebar container...")
+    
+    # First, wait for the page to be in a ready state
+    try:
+        WebDriverWait(driver, 10).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+        logging.debug("Page ready state is complete.")
+    except TimeoutException:
+        logging.warning("Page ready state timeout, but continuing...")
+    
+    # Add a small delay for Angular/React to initialize
+    await asyncio.sleep(1.0)
+    
     try:
         sidebar = wait_for_element(
             driver,
@@ -116,6 +123,20 @@ async def wait_for_sidebar(driver: WebDriver, timeout: int = 15) -> WebElement:
         logging.info("Sidebar container found.")
         return sidebar
     except TimeoutException:
+        # If sidebar not found, try to get more info about the page state
+        try:
+            page_title = driver.title
+            current_url = driver.current_url
+            body_elements = driver.find_elements(selectors.By.TAG_NAME, "body")
+            logging.error(f"Sidebar timeout - Page title: '{page_title}', URL: '{current_url}', Body elements: {len(body_elements)}")
+            
+            # Check for any elements that might indicate the page loaded
+            app_elements = driver.find_elements(selectors.By.CSS_SELECTOR, "app-api-doc-item")
+            sidebar_alts = driver.find_elements(selectors.By.CSS_SELECTOR, "div[class*='sidebar']")
+            logging.error(f"Found {len(app_elements)} app-api-doc-item elements, {len(sidebar_alts)} sidebar-like elements")
+        except Exception as debug_e:
+            logging.error(f"Could not get debug info: {debug_e}")
+        
         log_err = f"Sidebar container did not appear within {timeout} seconds."
         logging.error(log_err)
         raise
@@ -549,38 +570,39 @@ TOOLTIP_SELECTOR = (selectors.By.CSS_SELECTOR, "span#dds__tooltip__body")
 async def click_sidebar_item(driver: WebDriver, item_id: str, timeout: int = 10):
     """Clicks item link by parent LI ID using JavaScript to bypass interceptions."""
     log_start_click = (
-        f"Attempting to JAVASCRIPT click sidebar item link "
-        f"associated with LI ID: {item_id}"
+        f"Attempting to JAVASCRIPT click sidebar item "
+        f"with LI ID: {item_id}"
     )
     logging.info(log_start_click)
-    item_link_selector_str = f"li[id='{item_id}'] a"
-    item_link_selector = (selectors.By.CSS_SELECTOR, item_link_selector_str)
+    # Try clicking the LI element directly first, then fall back to the A tag
+    item_selector_str = f"li[id='{item_id}']"
+    item_selector = (selectors.By.CSS_SELECTOR, item_selector_str)
     # --- Reduce Timeout --- #
     presence_timeout = 3 # Short timeout just to check if the element exists
     # --- End Reduce --- #
     try:
         # --- CHANGED: Wait for PRESENCE only --- #
         log_wait_present = (
-            f"Waiting up to {presence_timeout}s for sidebar item link to be PRESENT: {item_link_selector}"
+            f"Waiting up to {presence_timeout}s for sidebar item to be PRESENT: {item_selector}"
         )
         logging.debug(log_wait_present)
-        item_link = WebDriverWait(driver, presence_timeout).until(
-             EC.presence_of_element_located(item_link_selector)
+        item_element = WebDriverWait(driver, presence_timeout).until(
+             EC.presence_of_element_located(item_selector)
         )
-        logging.debug("Sidebar item link is present in DOM.")
+        logging.debug("Sidebar item is present in DOM.")
         # --- END CHANGED --- #
 
-        logging.debug(f"Scrolling item link {item_id} into view.")
-        driver.execute_script("arguments[0].scrollIntoView(false);", item_link)
+        logging.debug(f"Scrolling item {item_id} into view.")
+        driver.execute_script("arguments[0].scrollIntoView(false);", item_element)
         await asyncio.sleep(0.1)  # Tiny sleep after scrolling
 
         # --- Use JavaScript click immediately after presence confirmed --- #
-        logging.debug(f"Attempting JavaScript click on item link {item_id}.")
-        driver.execute_script("arguments[0].click();", item_link)
+        logging.debug(f"Attempting JavaScript click on item {item_id}.")
+        driver.execute_script("arguments[0].click();", item_element)
         # --- END --- #
 
         log_success_click = (
-            f"Successfully triggered JavaScript click on sidebar item link {item_id}."
+            f"Successfully triggered JavaScript click on sidebar item {item_id}."
         )
         logging.info(log_success_click)
         return True # Indicate click was attempted
@@ -588,8 +610,8 @@ async def click_sidebar_item(driver: WebDriver, item_id: str, timeout: int = 10)
     except TimeoutException:
         # --- CHANGED: Error message reflects presence check --- #
         log_err_timeout = (
-            f"Timeout waiting for PRESENCE of link "
-            f"({item_link_selector_str}) for sidebar item ID: {item_id}"
+            f"Timeout waiting for PRESENCE of item "
+            f"({item_selector_str}) for sidebar item ID: {item_id}"
         )
         # --- END CHANGED --- #
         logging.error(log_err_timeout)
@@ -606,7 +628,7 @@ async def click_sidebar_item(driver: WebDriver, item_id: str, timeout: int = 10)
         ElementClickInterceptedException
     ):  # Still catch this, though hopefully less likely
         log_warn_intercept = (
-            f"JavaScript click intercepted for sidebar item link ID: "
+            f"JavaScript click intercepted for sidebar item ID: "
             f"{item_id}. This should be less common now."
         )
         logging.warning(log_warn_intercept)
@@ -619,7 +641,7 @@ async def click_sidebar_item(driver: WebDriver, item_id: str, timeout: int = 10)
         # Catch any other errors during the process
         log_err_unexpected = (
             f"An unexpected error occurred while trying JavaScript "
-            f"click on sidebar item link {item_id}: {e}"
+            f"click on sidebar item {item_id}: {e}"
         )
         logging.exception(log_err_unexpected)
         raise
@@ -720,3 +742,77 @@ async def wait_for_content_update(driver: WebDriver, timeout: int = 20):
         )
         logging.exception(log_err_unexpected)
         raise
+
+
+async def expand_menu_containing_node(driver: WebDriver, menu_text: str, target_node_id: str, timeout: int = 10, expand_delay: float = 0.2):
+    """
+    Finds and expands the correct menu (by name) that contains the target node.
+    If multiple menus have the same name, tries each one until the target node is found.
+    """
+    logging.debug(f"[expand_menu_containing_node] Looking for menu '{menu_text}' containing node '{target_node_id}'")
+    
+    # Find all menus with the specified text
+    menu_xpath = f"//li[contains(@class, 'toc-item') and .//div[normalize-space(.)='{menu_text}']]"
+    
+    try:
+        menu_elements = driver.find_elements(selectors.By.XPATH, menu_xpath)
+        logging.debug(f"[expand_menu_containing_node] Found {len(menu_elements)} menu(s) with text '{menu_text}'")
+        
+        if not menu_elements:
+            logging.error(f"[expand_menu_containing_node] No menus found with text '{menu_text}'")
+            return False
+            
+        for i, menu_element in enumerate(menu_elements):
+            logging.debug(f"[expand_menu_containing_node] Trying menu {i+1}/{len(menu_elements)} with text '{menu_text}'")
+            
+            # Check if this menu is already expanded and contains our target
+            target_selector = f"li[id='{target_node_id}']"
+            existing_targets = driver.find_elements(selectors.By.CSS_SELECTOR, target_selector)
+            
+            if existing_targets:
+                logging.info(f"[expand_menu_containing_node] Found target node '{target_node_id}' - menu '{menu_text}' (#{i+1}) is already expanded")
+                return True
+                
+            # Try to expand this specific menu
+            try:
+                # Check if menu has a collapsed icon (chevron-right)
+                collapsed_icon = menu_element.find_elements(selectors.By.XPATH, ".//i[contains(@class, 'dds__icon--chevron-right')]")
+                
+                if collapsed_icon:
+                    logging.debug(f"[expand_menu_containing_node] Expanding menu '{menu_text}' (#{i+1})")
+                    
+                    # Scroll into view and click
+                    driver.execute_script("arguments[0].scrollIntoView(false);", collapsed_icon[0])
+                    await asyncio.sleep(0.1)
+                    
+                    try:
+                        collapsed_icon[0].click()
+                        logging.debug(f"[expand_menu_containing_node] Clicked expander for menu '{menu_text}' (#{i+1})")
+                    except ElementClickInterceptedException:
+                        logging.debug(f"[expand_menu_containing_node] Click intercepted, trying JavaScript click")
+                        driver.execute_script("arguments[0].click();", collapsed_icon[0])
+                    
+                    # Wait for loader to disappear
+                    await wait_for_loader_to_disappear(driver, timeout=10)
+                    await asyncio.sleep(expand_delay)
+                    
+                    # Check if target node is now present
+                    target_elements = driver.find_elements(selectors.By.CSS_SELECTOR, target_selector)
+                    if target_elements:
+                        logging.info(f"[expand_menu_containing_node] SUCCESS: Found target node '{target_node_id}' after expanding menu '{menu_text}' (#{i+1})")
+                        return True
+                    else:
+                        logging.debug(f"[expand_menu_containing_node] Target node '{target_node_id}' not found in menu '{menu_text}' (#{i+1})")
+                else:
+                    logging.debug(f"[expand_menu_containing_node] Menu '{menu_text}' (#{i+1}) appears to already be expanded")
+                    
+            except Exception as e:
+                logging.warning(f"[expand_menu_containing_node] Error expanding menu '{menu_text}' (#{i+1}): {e}")
+                continue
+                
+        logging.error(f"[expand_menu_containing_node] Target node '{target_node_id}' not found in any '{menu_text}' menu after trying {len(menu_elements)} menu(s)")
+        return False
+        
+    except Exception as e:
+        logging.error(f"[expand_menu_containing_node] Error finding menus with text '{menu_text}': {e}")
+        return False

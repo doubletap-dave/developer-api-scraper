@@ -19,8 +19,8 @@ delays:
   # content_wait: 10     # (For Phase 3) Timeout waiting for content pane markdown
 
   # --- Optional overrides for non-headless mode (--no-headless) ---
-  navigation_noheadless: 15
-  sidebar_wait_noheadless: 20
+  navigation_noheadless: 30
+  sidebar_wait_noheadless: 30
   expand_menu_noheadless: 0.7
   post_expand_settle_noheadless: 2.0
   post_click_noheadless: 0.7

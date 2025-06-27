@@ -220,12 +220,98 @@ async def main():
     driver = None # Initialize driver to None here
     expansion_performed = False # Track if live expansion happened
 
+    # --- Phase 3: Load or Parse Sidebar Structure --- #
+    logging.info("Proceeding to Phase 3: Sidebar Structure Loading/Parsing")
+
+    # First, check if we can load an existing structure to do early resume check
     logging.info(f"Checking for existing structure map: {structure_filepath}")
     sidebar_structure = sidebar_parser.load_structure_map(str(structure_filepath))
-
+    
+    # If we have a structure, do an early resume check BEFORE initializing WebDriver
     if sidebar_structure:
         logging.info("Loaded existing sidebar structure map.")
-        # Initialize driver needed for later navigation, even if structure is loaded
+        
+        # Flatten the structure for early resume check
+        flattened_structure = sidebar_parser.flatten_sidebar_structure(sidebar_structure)
+        valid_items = [item for item in flattened_structure if item.get("id")]
+        
+        # Apply --max-items limit if specified
+        items_to_check = valid_items
+        if args.max_items is not None and args.max_items >= 0:
+            items_to_check = valid_items[: args.max_items]
+            logging.info(f"Resume check limited to first {len(items_to_check)} items (--max-items).")
+        elif args.test_item_id:
+            logging.warning("--test-item-id is deprecated. Use --max-items=1 and check structure file.")
+            items_to_check = [item for item in valid_items if item.get("id") == args.test_item_id]
+            if not items_to_check:
+                logging.error(f"Item with ID '{args.test_item_id}' not found in flattened structure.")
+                items_to_check = []
+        
+        # Pre-filter items to check which already exist
+        items_needing_processing = []
+        existing_items = []
+        
+        for item in items_to_check:
+            expected_file = storage.get_output_file_path(
+                item.get("header"), 
+                item.get("menu"), 
+                item.get("text", "Unknown Item"), 
+                base_output_dir
+            )
+            if expected_file.exists():
+                existing_items.append(item)
+            else:
+                items_needing_processing.append(item)
+        
+        # Handle --resume-info option BEFORE any browser operations
+        if args.resume_info:
+            print(f"\n📊 Resume Information:")
+            print(f"  Total items in structure: {len(items_to_check)}")
+            print(f"  ✅ Already processed: {len(existing_items)}")
+            print(f"  🔄 Need processing: {len(items_needing_processing)}")
+            print(f"  📁 Output directory: {base_output_dir}")
+            
+            if existing_items:
+                print(f"\n✅ Existing files ({len(existing_items)}):")
+                for item in existing_items[:10]:  # Show first 10
+                    file_path = storage.get_output_file_path(
+                        item.get("header"), item.get("menu"), 
+                        item.get("text", "Unknown Item"), base_output_dir
+                    )
+                    print(f"    {item.get('text', 'Unknown')} -> {file_path}")
+                if len(existing_items) > 10:
+                    print(f"    ... and {len(existing_items) - 10} more")
+            
+            if items_needing_processing:
+                print(f"\n🔄 Need processing ({len(items_needing_processing)}):")
+                for item in items_needing_processing[:10]:  # Show first 10
+                    print(f"    {item.get('text', 'Unknown')} (ID: {item.get('id')})")
+                if len(items_needing_processing) > 10:
+                    print(f"    ... and {len(items_needing_processing) - 10} more")
+            
+            print(f"\n💡 To resume processing: python main.py")
+            print(f"💡 To force re-process all: python main.py --force")
+            sys.exit(0)
+        
+        # Check if we can skip browser operations entirely
+        if not args.force and not items_needing_processing:
+            logging.info("All items already processed! Use --force to re-process existing files.")
+            print(f"✅ All {len(existing_items)} items already processed!")
+            print(f"📁 Output directory: {base_output_dir}")
+            print(f"💡 Use --force to re-process existing files")
+            print(f"💡 Use --resume-info to see detailed status")
+            sys.exit(0)
+        
+        if not args.force and existing_items:
+            logging.info(f"Found {len(existing_items)} existing files - will skip during processing")
+            logging.info(f"Will process {len(items_needing_processing)} remaining items")
+
+    driver = None # Initialize driver to None here
+    expansion_performed = False # Track if live expansion happened
+
+    if sidebar_structure:
+        # We already loaded it above, now initialize driver for navigation
+        logging.info("Initializing WebDriver for navigation with existing structure...")
         driver = driver_setup.initialize_driver(
             browser=cfg.get("webdriver", {}).get("browser", "chrome"), headless=headless
         )
@@ -240,8 +326,6 @@ async def main():
         expansion_performed = False # Still false, as full expansion didn't happen
     else:
         logging.info("Structure map not found or failed to load. Performing live parsing...")
-        # The actual parsing logic will be moved inside this 'else' block.
-        # pass # Placeholder for live parsing logic
         # --- START LIVE PARSING LOGIC --- #
         if not driver: # Initialize if structure loading failed AND driver is None
              driver = driver_setup.initialize_driver(
@@ -329,13 +413,6 @@ async def main():
     total_items_in_structure = 0  # Track total valid items
 
     try:
-        # --- LIVE PARSING LOGIC MOVED HERE (if sidebar_structure is None) ---
-        # [THIS ENTIRE BLOCK IS BEING REMOVED]
-        # if not sidebar_structure:
-        #     # ... (Live parsing, structure saving logic is already here) ...
-        #     pass # This block is complete
-        # --- END OF LIVE PARSING LOGIC ---
-
         # --- Phase 4: Loop Through Structure and Scrape --- #
         logging.info("Proceeding to Phase 4: Content Scraping")
         # Ensure structure exists before flattening
@@ -343,34 +420,36 @@ async def main():
             logging.critical("Sidebar structure is missing after load/parse attempt. Cannot proceed.")
             sys.exit(1)
 
-        # Flatten the structure for easier iteration
-        flattened_structure = sidebar_parser.flatten_sidebar_structure(sidebar_structure)
-        # Filter out items without an ID, as they cannot be reliably clicked/processed
-        valid_items = [item for item in flattened_structure if item.get("id")]
+        # Flatten the structure for easier iteration (may be already done above if loaded from file)
+        if 'flattened_structure' not in locals():
+            flattened_structure = sidebar_parser.flatten_sidebar_structure(sidebar_structure)
+        if 'valid_items' not in locals():
+            valid_items = [item for item in flattened_structure if item.get("id")]
         total_items_in_structure = len(valid_items)
         logging.info(
             f"Flattened structure contains {total_items_in_structure} valid items with IDs."
         )
 
-        # Apply --max-items limit if specified
-        items_to_process = valid_items
-        if args.max_items is not None and args.max_items >= 0:
-            items_to_process = valid_items[: args.max_items]
-            logging.info(
-                f"Processing limited to first {len(items_to_process)} items (--max-items)."
-            )
-        elif args.test_item_id:
-            logging.warning(
-                "--test-item-id is deprecated. Use --max-items=1 and check structure file."
-            )
-            items_to_process = [
-                item for item in valid_items if item.get("id") == args.test_item_id
-            ]
-            if not items_to_process:
-                logging.error(
-                    f"Item with ID '{args.test_item_id}' not found in flattened structure."
+        # Apply --max-items limit if specified (may be already done above)
+        if 'items_to_process' not in locals():
+            items_to_process = valid_items
+            if args.max_items is not None and args.max_items >= 0:
+                items_to_process = valid_items[: args.max_items]
+                logging.info(
+                    f"Processing limited to first {len(items_to_process)} items (--max-items)."
                 )
-                items_to_process = [] # Ensure it's empty
+            elif args.test_item_id:
+                logging.warning(
+                    "--test-item-id is deprecated. Use --max-items=1 and check structure file."
+                )
+                items_to_process = [
+                    item for item in valid_items if item.get("id") == args.test_item_id
+                ]
+                if not items_to_process:
+                    logging.error(
+                        f"Item with ID '{args.test_item_id}' not found in flattened structure."
+                    )
+                    items_to_process = [] # Ensure it's empty
 
         if not items_to_process:
             logging.warning("No items selected for processing. Exiting.")
@@ -378,51 +457,22 @@ async def main():
             # The finally block will handle driver quit if it exists.
             sys.exit(0)
 
-        # Pre-filter items to skip those that already exist (unless --force is used)
-        items_needing_processing = []
-        existing_items = []
-        
-        for item in items_to_process:
-            expected_file = storage.get_output_file_path(
-                item.get("header"), 
-                item.get("menu"), 
-                item.get("text", "Unknown Item"), 
-                base_output_dir
-            )
-            if expected_file.exists():
-                existing_items.append(item)
-            else:
-                items_needing_processing.append(item)
-        
-        # Handle --resume-info option
-        if args.resume_info:
-            print(f"\n📊 Resume Information:")
-            print(f"  Total items in structure: {len(items_to_process)}")
-            print(f"  ✅ Already processed: {len(existing_items)}")
-            print(f"  🔄 Need processing: {len(items_needing_processing)}")
-            print(f"  📁 Output directory: {base_output_dir}")
+        # Do final resume check if not already done above
+        if 'items_needing_processing' not in locals():
+            items_needing_processing = []
+            existing_items = []
             
-            if existing_items:
-                print(f"\n✅ Existing files ({len(existing_items)}):")
-                for item in existing_items[:10]:  # Show first 10
-                    file_path = storage.get_output_file_path(
-                        item.get("header"), item.get("menu"), 
-                        item.get("text", "Unknown Item"), base_output_dir
-                    )
-                    print(f"    {item.get('text', 'Unknown')} -> {file_path}")
-                if len(existing_items) > 10:
-                    print(f"    ... and {len(existing_items) - 10} more")
-            
-            if items_needing_processing:
-                print(f"\n🔄 Need processing ({len(items_needing_processing)}):")
-                for item in items_needing_processing[:10]:  # Show first 10
-                    print(f"    {item.get('text', 'Unknown')} (ID: {item.get('id')})")
-                if len(items_needing_processing) > 10:
-                    print(f"    ... and {len(items_needing_processing) - 10} more")
-            
-            print(f"\n💡 To resume processing: python main.py")
-            print(f"💡 To force re-process all: python main.py --force")
-            sys.exit(0)
+            for item in items_to_process:
+                expected_file = storage.get_output_file_path(
+                    item.get("header"), 
+                    item.get("menu"), 
+                    item.get("text", "Unknown Item"), 
+                    base_output_dir
+                )
+                if expected_file.exists():
+                    existing_items.append(item)
+                else:
+                    items_needing_processing.append(item)
         
         if not args.force and existing_items:
             logging.info(f"Found {len(existing_items)} existing files - skipping (use --force to overwrite)")
@@ -484,24 +534,35 @@ async def main():
                         progress.update(task_id, advance=1, description=f"Error processing {item_text} - No Driver")
                         continue # Skip to next item
 
-                    # --- RE-ENABLE/ENSURE Parent Menu Expansion --- #
-                    # Always try to expand the immediate parent menu if it exists,
-                    # regardless of whether structure was loaded or live-parsed.
+                    # --- SMART Menu Expansion --- #
+                    # Use the new function to find the correct menu containing our target node
+                    menu_text = item.get("menu")
+                    
+                    if menu_text:
+                        logging.debug(f"Finding and expanding the correct '{menu_text}' menu containing node '{item_id}'")
+                        try:
+                            success = await navigation.expand_menu_containing_node(
+                                driver, menu_text, item_id, timeout=navigation_timeout, expand_delay=expand_delay
+                            )
+                            if success:
+                                logging.debug(f"Successfully found and expanded the correct '{menu_text}' menu")
+                            else:
+                                logging.warning(f"Could not find target node '{item_id}' in any '{menu_text}' menu")
+                        except Exception as expand_err:
+                            logging.warning(f"Error during smart menu expansion for '{menu_text}': {expand_err}")
+                    
+                    # Legacy fallback for parent_menu_text if still used
                     parent_menu_text = item.get("parent_menu_text")
-                    if parent_menu_text:
-                        logging.debug(
-                            f"Ensuring parent menu '{parent_menu_text}' is expanded before clicking '{item_text}'"
-                        )
+                    if parent_menu_text and parent_menu_text != menu_text:
+                        logging.debug(f"Legacy fallback: ensuring parent menu '{parent_menu_text}' is expanded")
                         try:
                             await navigation.expand_specific_menu(
                                 driver, parent_menu_text, timeout=navigation_timeout, expand_delay=expand_delay
                             )
-                            # Brief pause after potential expansion
                             await asyncio.sleep(0.3)
                         except Exception as expand_err:
-                            logging.warning(f"Could not ensure parent menu '{parent_menu_text}' was expanded: {expand_err}")
-                            # Attempt click anyway, maybe it's already expanded or error is transient
-                    # --- END Parent Menu Expansion --- #
+                            logging.warning(f"Could not ensure legacy parent menu '{parent_menu_text}' was expanded: {expand_err}")
+                    # --- END SMART Menu Expansion --- #
 
                     # Use the robust click function
                     clicked = await navigation.click_sidebar_item(
