@@ -92,6 +92,12 @@ async def main():
         default=None,  # Default to None, meaning process all items
         help="Max items to process from sidebar structure (for testing).",
     )
+    # Add resume information option
+    parser.add_argument(
+        "--resume-info",
+        action="store_true",
+        help="Show resume information (what files exist vs need processing) and exit.",
+    )
 
     args = parser.parse_args()
 
@@ -372,7 +378,69 @@ async def main():
             # The finally block will handle driver quit if it exists.
             sys.exit(0)
 
+        # Pre-filter items to skip those that already exist (unless --force is used)
+        items_needing_processing = []
+        existing_items = []
+        
+        for item in items_to_process:
+            expected_file = storage.get_output_file_path(
+                item.get("header"), 
+                item.get("menu"), 
+                item.get("text", "Unknown Item"), 
+                base_output_dir
+            )
+            if expected_file.exists():
+                existing_items.append(item)
+            else:
+                items_needing_processing.append(item)
+        
+        # Handle --resume-info option
+        if args.resume_info:
+            print(f"\n📊 Resume Information:")
+            print(f"  Total items in structure: {len(items_to_process)}")
+            print(f"  ✅ Already processed: {len(existing_items)}")
+            print(f"  🔄 Need processing: {len(items_needing_processing)}")
+            print(f"  📁 Output directory: {base_output_dir}")
+            
+            if existing_items:
+                print(f"\n✅ Existing files ({len(existing_items)}):")
+                for item in existing_items[:10]:  # Show first 10
+                    file_path = storage.get_output_file_path(
+                        item.get("header"), item.get("menu"), 
+                        item.get("text", "Unknown Item"), base_output_dir
+                    )
+                    print(f"    {item.get('text', 'Unknown')} -> {file_path}")
+                if len(existing_items) > 10:
+                    print(f"    ... and {len(existing_items) - 10} more")
+            
+            if items_needing_processing:
+                print(f"\n🔄 Need processing ({len(items_needing_processing)}):")
+                for item in items_needing_processing[:10]:  # Show first 10
+                    print(f"    {item.get('text', 'Unknown')} (ID: {item.get('id')})")
+                if len(items_needing_processing) > 10:
+                    print(f"    ... and {len(items_needing_processing) - 10} more")
+            
+            print(f"\n💡 To resume processing: python main.py")
+            print(f"💡 To force re-process all: python main.py --force")
+            sys.exit(0)
+        
+        if not args.force and existing_items:
+            logging.info(f"Found {len(existing_items)} existing files - skipping (use --force to overwrite)")
+            logging.debug(f"Existing files: {[item.get('text', 'Unknown') for item in existing_items]}")
+            items_to_process = items_needing_processing
+            skipped_count += len(existing_items)  # Count pre-skipped items
+        elif args.force:
+            items_to_process = items_to_process  # Process all items including existing ones
+        
+        if not items_to_process:
+            logging.info("All items already processed! Use --force to re-process existing files.")
+            if driver:
+                driver.quit()
+            sys.exit(0)
+
         logging.info(f"Starting Phase 4: Processing {len(items_to_process)} items...")
+        logging.info(f"Pre-skipped {skipped_count} existing files (use --force to overwrite)")
+        
         # Ensure base output dir exists
         base_output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -527,6 +595,12 @@ async def main():
     logging.info(f"Errors: {error_count}")
     logging.info(f"Items with no content extracted: {no_content_count}")
     logging.info(f"Total valid items found in structure: {total_items_in_structure}")
+    
+    # Resume information
+    if skipped_count > 0 and not args.force:
+        logging.info(f"💡 Resume tip: {skipped_count} files were skipped because they already exist.")
+        logging.info(f"💡 Use --resume-info to see detailed resume status")
+        logging.info(f"💡 Use --force to re-process existing files")
 
 
 if __name__ == "__main__":

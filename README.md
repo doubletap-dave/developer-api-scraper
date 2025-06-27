@@ -9,6 +9,7 @@ A powerful Python tool for extracting comprehensive API documentation from compl
 - **Comprehensive Content**: Extracts API endpoints, parameters, responses, schemas, and descriptions
 - **Robust Navigation**: Handles complex dynamic web interfaces with intelligent waiting and error recovery
 - **Progress Tracking**: Real-time progress bar with detailed status updates
+- **Smart Resume**: Automatically skips existing files and resumes where you left off
 - **Flexible Output**: Organized directory structure with clean Markdown formatting
 - **Debug Support**: Extensive logging and HTML capture for troubleshooting
 
@@ -124,6 +125,11 @@ python main.py --test-item-id docs-node-7145406 --debug --force
 python main.py --log-level DEBUG
 ```
 
+**Check resume status:**
+```bash
+python main.py --resume-info
+```
+
 **Save structure and HTML for debugging:**
 ```bash
 python main.py --save-structure --save-html --debug
@@ -217,6 +223,7 @@ Internal Server Error response...
 | `--force` | Overwrite existing files | `--force` |
 | `--max-items` | Limit items to process | `--max-items 5` |
 | `--test-item-id` | Process specific item (deprecated) | `--test-item-id docs-node-123` |
+| `--resume-info` | Show resume status and exit | `--resume-info` |
 | `--save-structure` | Save sidebar structure | `--save-structure` |
 | `--save-html` | Save raw HTML | `--save-html` |
 
@@ -247,6 +254,18 @@ python main.py --debug --save-html
 - This has been fixed in v1.0.0+
 - Ensure you're using the latest version
 
+**Resume after interruption:**
+```bash
+# Check what's been processed vs what's left
+python main.py --resume-info
+
+# Resume processing (automatically skips existing files)
+python main.py
+
+# Force re-process everything
+python main.py --force
+```
+
 ### Debug Mode
 
 Debug mode provides extensive troubleshooting information:
@@ -257,6 +276,49 @@ Debug mode provides extensive troubleshooting information:
 
 ```bash
 python main.py --debug --max-items 1
+```
+
+## 🔄 Resume Functionality
+
+Wyrm automatically handles interrupted scraping sessions:
+
+### Automatic Resume
+- **Smart Detection**: Automatically detects existing files and skips them
+- **Fast Resume**: No need to re-navigate to already processed pages
+- **Progress Preservation**: Maintains progress across sessions
+
+### Resume Commands
+```bash
+# Check resume status
+python main.py --resume-info
+
+# Resume where you left off (default behavior)
+python main.py
+
+# Force re-process all files
+python main.py --force
+```
+
+### Resume Information Output
+```
+📊 Resume Information:
+  Total items in structure: 1596
+  ✅ Already processed: 63
+  🔄 Need processing: 1533
+  📁 Output directory: output
+
+✅ Existing files (63):
+    PowerFlex -> output/introduction/powerflex.md
+    Authentication -> output/getting-started/powerapi/authentication.md
+    ...
+
+🔄 Need processing (1533):
+    Query System's Protection Domains (ID: docs-node-7145407)
+    Query System's SDCs (ID: docs-node-7145408)
+    ...
+
+💡 To resume processing: python main.py
+💡 To force re-process all: python main.py --force
 ```
 
 ## 📊 Performance
