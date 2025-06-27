@@ -56,6 +56,7 @@ class Orchestrator:
         self.parsing_service = ParsingService()
         self.storage_service = StorageService()
         self.progress_service = ProgressService()
+        self._config = None  # Store config for cleanup
 
     async def run_scraping_workflow(
         self,
@@ -112,6 +113,9 @@ class Orchestrator:
                 "max_expand_attempts": max_expand_attempts,
             }
             config = self.config_service.merge_cli_overrides(config, cli_args)
+
+            # Store config for cleanup
+            self._config = config
 
             if debug:
                 save_structure = True
@@ -446,7 +450,10 @@ class Orchestrator:
             Exception: Logs but doesn't re-raise cleanup errors.
         """
         try:
-            await self.navigation_service.cleanup()
+            if self._config:
+                await self.navigation_service.cleanup(self._config)
+            else:
+                self.logger.warning("No config available for cleanup")
             self.logger.info("Cleanup completed successfully")
         except Exception as e:
             self.logger.error("Error during cleanup", error=str(e))
