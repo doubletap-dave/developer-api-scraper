@@ -37,7 +37,7 @@ behavior:
 
 debug_settings:
   # Directory for debug outputs (structure.json, sidebar_debug.html)
-  output_directory: "output/debug"
+  output_directory: "debug"
   # Default filename for the saved structure JSON
   save_structure_filename: "structure_debug.json"
   # Default filename for the saved sidebar HTML

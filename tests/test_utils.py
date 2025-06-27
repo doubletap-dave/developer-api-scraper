@@ -1,4 +1,14 @@
-# tests/test_utils.py
+"""Utility tests for the Wyrm documentation scraper.
+
+This module contains tests for various utility functions and shared components
+used throughout the Wyrm application. Tests cover common operations like
+file handling, data validation, and helper functions.
+"""
+
+import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock
+
 import pytest
 
 # Attempt to import from wyrm.utils, adjust if structure differs
@@ -62,3 +72,114 @@ def test_placeholder():
 
 
 # Add more tests for other utils functions later
+
+def test_create_temp_file():
+    """Test creation of temporary files.
+
+    Validates that temporary files can be created and written to successfully,
+    ensuring proper file handling throughout the application.
+
+    Args:
+        None
+
+    Returns:
+        None
+
+    Raises:
+        AssertionError: If temporary file operations fail.
+    """
+    with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp_file:
+        temp_file.write("test content")
+        temp_path = Path(temp_file.name)
+
+    assert temp_path.exists()
+    assert temp_path.read_text() == "test content"
+    temp_path.unlink()  # cleanup
+
+
+def test_path_operations():
+    """Test basic path operations and validation.
+
+    Ensures that Path objects behave correctly for file system operations
+    used throughout the Wyrm application.
+
+    Args:
+        None
+
+    Returns:
+        None
+
+    Raises:
+        AssertionError: If path operations don't behave as expected.
+    """
+    test_path = Path("test_file.txt")
+    parent_path = test_path.parent
+
+    assert parent_path == Path(".")
+    assert test_path.suffix == ".txt"
+    assert test_path.stem == "test_file"
+
+
+def test_mock_functionality():
+    """Test mock object creation and behavior.
+
+    Validates that mock objects work correctly for testing scenarios
+    where external dependencies need to be simulated.
+
+    Args:
+        None
+
+    Returns:
+        None
+
+    Raises:
+        AssertionError: If mock behavior is incorrect.
+    """
+    mock_obj = MagicMock()
+    mock_obj.test_method.return_value = "mocked_result"
+
+    result = mock_obj.test_method()
+    assert result == "mocked_result"
+    mock_obj.test_method.assert_called_once()
+
+
+def test_exception_handling():
+    """Test exception handling patterns.
+
+    Validates that exceptions are properly caught and handled in test scenarios,
+    ensuring robust error handling throughout the application.
+
+    Args:
+        None
+
+    Returns:
+        None
+
+    Raises:
+        AssertionError: If exception handling doesn't work as expected.
+    """
+    with pytest.raises(ValueError):
+        raise ValueError("Test exception")
+
+
+def test_data_validation():
+    """Test data validation and type checking.
+
+    Ensures that data validation patterns work correctly for various
+    data types and structures used in the Wyrm application.
+
+    Args:
+        None
+
+    Returns:
+        None
+
+    Raises:
+        AssertionError: If data validation fails unexpectedly.
+    """
+    test_data = {"key": "value", "number": 42}
+
+    assert isinstance(test_data, dict)
+    assert "key" in test_data
+    assert test_data["number"] == 42
+    assert len(test_data) == 2

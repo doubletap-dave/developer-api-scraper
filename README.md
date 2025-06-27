@@ -58,7 +58,7 @@ delays:
   expand_menu: 0.5
   post_expand_settle: 1.0
   content_wait: 20
-  
+
   # Non-headless mode overrides (for debugging)
   navigation_noheadless: 15
   sidebar_wait_noheadless: 20
