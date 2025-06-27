@@ -192,6 +192,7 @@ _memory_bank/
 .docs/
 .cursor/
 /wyrm/__pycache__/
+plan/
 
 output/
 debug/
