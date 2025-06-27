@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 
+import structlog
 import yaml
 from rich.logging import RichHandler
 
@@ -40,6 +41,7 @@ class ConfigurationService:
         Returns:
             None
         """
+        self.logger = structlog.get_logger(__name__)
         self._config = {}
 
     def setup_logging(
@@ -102,7 +104,9 @@ class ConfigurationService:
         # Add other libraries here if they become noisy
 
         logging.info(
-            f"Logging setup complete. Level: {log_level}, Console: True, File: {log_file}")
+            f"Logging setup complete. Level: {log_level}, "
+            f"Console: True, File: {log_file}"
+        )
 
     def load_config(self, config_path: Optional[Path] = None) -> AppConfig:
         """Load configuration from a YAML file and parse into AppConfig model.
@@ -112,7 +116,8 @@ class ConfigurationService:
         AppConfig model that provides structured access to all settings.
 
         Args:
-            config_path: Path to YAML configuration file. If None, defaults to "config.yaml".
+            config_path: Path to YAML configuration file. If None, defaults to
+                "config.yaml".
 
         Returns:
             AppConfig: Validated configuration model with all settings.
@@ -127,10 +132,12 @@ class ConfigurationService:
             config_path = Path("config.yaml")
 
         path = Path(config_path)
-        logging.info(f"Loading configuration from: {path.absolute()}")
+        self.logger.info("Loading configuration", path=str(path.absolute()))
 
         if not path.is_file():
-            logging.error(f"Configuration file not found: {path}")
+            self.logger.error(
+                "Configuration file not found", path=str(path)
+            )
             raise FileNotFoundError(f"Configuration file not found: {path}")
 
         try:
@@ -139,14 +146,24 @@ class ConfigurationService:
 
             # Parse raw config into AppConfig model (this validates the data)
             config = AppConfig(**raw_config)
-            logging.debug(f"Configuration loaded and validated: {config}")
+            self.logger.debug(
+                "Configuration loaded and validated", config=str(config)
+            )
             self._config = config  # Store for get_config method
             return config
         except yaml.YAMLError as e:
-            logging.exception(f"Error parsing configuration file {path}: {e}")
+            self.logger.exception(
+                "Error parsing configuration file",
+                path=str(path),
+                error=str(e)
+            )
             raise
         except Exception as e:
-            logging.exception(f"Error reading configuration file {path}: {e}")
+            self.logger.exception(
+                "Error reading configuration file",
+                path=str(path),
+                error=str(e)
+            )
             raise
 
     def extract_configuration_values(self, config: AppConfig) -> Dict:
@@ -166,7 +183,9 @@ class ConfigurationService:
             AttributeError: If required configuration attributes are missing.
             Exception: If configuration extraction fails for any reason.
         """
-        logging.info("Extracting configuration values from AppConfig model...")
+        self.logger.info(
+            "Extracting configuration values from AppConfig model"
+        )
 
         try:
             # Extract values from the validated AppConfig model
@@ -184,16 +203,23 @@ class ConfigurationService:
                     config.delays,
                     'post_click_noheadless',
                     1.0),
-                "default_html_filename": config.debug_settings.save_html_filename,
-                "default_structure_filename": config.debug_settings.save_structure_filename,
+                "default_html_filename": (
+                    config.debug_settings.save_html_filename
+                ),
+                "default_structure_filename": (
+                    config.debug_settings.save_structure_filename
+                ),
             }
 
-            logging.info(
-                "Configuration values extracted successfully from AppConfig model.")
+            self.logger.info(
+                "Configuration values extracted successfully from AppConfig model"
+            )
             return config_values
 
         except Exception as e:
-            logging.error(f"Failed to extract configuration values: {e}")
+            self.logger.error(
+                "Failed to extract configuration values", error=str(e)
+            )
             raise
 
     def merge_cli_overrides(self, config: AppConfig, cli_args: Dict) -> AppConfig:
@@ -222,19 +248,29 @@ class ConfigurationService:
         # Handle headless override
         if cli_args.get("headless") is not None:
             config_dict["webdriver"]["headless"] = cli_args["headless"]
-            logging.info(f"CLI override: headless = {cli_args['headless']}")
+            self.logger.info(
+                "CLI override", setting="headless", value=cli_args["headless"]
+            )
 
         # Handle log level override
         if cli_args.get("log_level"):
             config_dict["log_level"] = cli_args["log_level"]
-            logging.info(f"CLI override: log_level = {cli_args['log_level']}")
+            self.logger.info(
+                "CLI override",
+                setting="log_level",
+                value=cli_args["log_level"]
+            )
 
         # Handle max expand attempts override
         if cli_args.get("max_expand_attempts") is not None:
-            config_dict["behavior"]["max_expand_attempts"] = cli_args["max_expand_attempts"]
-            logging.info(
-                f"CLI override: max_expand_attempts = {
-                    cli_args['max_expand_attempts']}")
+            config_dict["behavior"]["max_expand_attempts"] = (
+                cli_args["max_expand_attempts"]
+            )
+            self.logger.info(
+                "CLI override",
+                setting="max_expand_attempts",
+                value=cli_args["max_expand_attempts"]
+            )
 
         # Create new AppConfig with merged values
         return AppConfig(**config_dict)
@@ -265,12 +301,16 @@ class ConfigurationService:
         for directory in directories:
             try:
                 Path(directory).mkdir(parents=True, exist_ok=True)
-                logging.debug(f"Directory ensured: {directory}")
+                self.logger.debug("Directory ensured", directory=str(directory))
             except Exception as e:
-                logging.error(f"Failed to create directory {directory}: {e}")
+                self.logger.error(
+                    "Failed to create directory",
+                    directory=str(directory),
+                    error=str(e)
+                )
                 raise
 
-        logging.info("All required directories have been set up.")
+        self.logger.info("All required directories have been set up")
 
     def get_environment_info(self) -> Dict:
         """Get information about the current environment.

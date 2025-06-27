@@ -8,3 +8,4 @@ beautifulsoup4
 uv
 pydantic
 typer[all]
+structlog

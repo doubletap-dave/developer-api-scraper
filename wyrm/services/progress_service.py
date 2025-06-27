@@ -4,7 +4,7 @@ This service handles progress reporting, statistics tracking, and user feedback
 during the scraping process using Rich progress bars and logging.
 """
 
-import logging
+import structlog
 
 from rich.progress import (
     BarColumn,
@@ -44,6 +44,7 @@ class ProgressService:
         Returns:
             None
         """
+        self.logger = structlog.get_logger(__name__)
         self.total_items = 0
         self.processed_count = 0
         self.skipped_count = 0
@@ -68,7 +69,7 @@ class ProgressService:
         if total < 0:
             raise ValueError("Total items cannot be negative")
         self.total_items = total
-        logging.info(f"Progress tracking initialized for {total} total items")
+        self.logger.info("Progress tracking initialized", total_items=total)
 
     def create_progress_display(self) -> Progress:
         """Create a Rich progress display with comprehensive columns.
@@ -172,16 +173,19 @@ class ProgressService:
             if total_attempted > 0 else 0
         )
 
-        logging.info("=" * 60)
-        logging.info("FINAL PROCESSING SUMMARY")
-        logging.info("=" * 60)
-        logging.info(f"Total items found: {self.total_items}")
-        logging.info(f"Items processed successfully: {self.processed_count}")
-        logging.info(f"Items skipped (already exist): {self.skipped_count}")
-        logging.info(f"Items with errors: {self.error_count}")
-        logging.info(f"Items with no content: {self.no_content_count}")
-        logging.info(f"Success rate: {success_rate:.1f}%")
-        logging.info("=" * 60)
+        self.logger.info("=" * 60)
+        self.logger.info("FINAL PROCESSING SUMMARY")
+        self.logger.info("=" * 60)
+        self.logger.info(
+            "Processing completed",
+            total_items=self.total_items,
+            processed_successfully=self.processed_count,
+            skipped_existing=self.skipped_count,
+            errors=self.error_count,
+            no_content=self.no_content_count,
+            success_rate=f"{success_rate:.1f}%"
+        )
+        self.logger.info("=" * 60)
 
     def reset_counters(self) -> None:
         """Reset all counters to zero.

@@ -5,10 +5,10 @@ specialized services for configuration, navigation, parsing, storage, and progre
 """
 
 
-import logging
 import sys
 from typing import Dict, List, Optional
-from pathlib import Path
+
+import structlog
 
 from wyrm.models.config import AppConfig
 from wyrm.models.scrape import SidebarStructure
@@ -50,6 +50,7 @@ class Orchestrator:
         Returns:
             None
         """
+        self.logger = structlog.get_logger(__name__)
         self.config_service = ConfigurationService()
         self.navigation_service = NavigationService()
         self.parsing_service = ParsingService()
@@ -112,15 +113,12 @@ class Orchestrator:
             }
             config = self.config_service.merge_cli_overrides(config, cli_args)
 
-            # Setup logging
-            effective_log_level = log_level or config.log_level
             if debug:
-                effective_log_level = "DEBUG"
                 save_structure = True
                 save_html = True
-                logging.info("Debug mode enabled - forcing structure and HTML saves.")
-
-            self.config_service.setup_logging(effective_log_level)
+                self.logger.info(
+                    "Debug mode enabled - forcing structure and HTML saves"
+                )
 
             # Get configuration values
             config_values = self.config_service.extract_configuration_values(config)
@@ -141,9 +139,9 @@ class Orchestrator:
             )
 
         except KeyboardInterrupt:
-            logging.warning("--- User interrupted execution ---")
+            self.logger.warning("User interrupted execution")
         except Exception as e:
-            logging.exception(f"--- An unexpected error occurred: {e} ---")
+            self.logger.exception("An unexpected error occurred", error=str(e))
         finally:
             await self._cleanup()
 
@@ -183,7 +181,9 @@ class Orchestrator:
         structure_filepath = self.parsing_service.get_structure_filepath(config_values)
 
         # Try to load existing structure first
-        sidebar_structure = self.parsing_service.load_existing_structure(structure_filepath)
+        sidebar_structure = self.parsing_service.load_existing_structure(
+            structure_filepath
+        )
 
         if not sidebar_structure or force:
             # Need to parse live
@@ -193,7 +193,9 @@ class Orchestrator:
             )
 
         # Handle resume check
-        await self._handle_resume_check(sidebar_structure, config_values, resume_info, force)
+        await self._handle_resume_check(
+            sidebar_structure, config_values, resume_info, force
+        )
 
         return sidebar_structure
 
@@ -229,22 +231,38 @@ class Orchestrator:
         """
         # Initialize driver and navigate
         await self.navigation_service.initialize_driver(config)
-        sidebar_html = await self.navigation_service.navigate_and_wait(config, config_values)
+        sidebar_html = await self.navigation_service.navigate_and_wait(
+            config, config_values
+        )
 
         # Save debug files if requested
         if save_html:
-            await self.parsing_service.save_debug_html(sidebar_html, config_values, html_filename)
+            await self.parsing_service.save_debug_html(
+                sidebar_html, config_values, html_filename
+            )
 
         # Parse and save structure
-        sidebar_structure = await self.parsing_service.parse_sidebar_structure(sidebar_html)
+        sidebar_structure = await self.parsing_service.parse_sidebar_structure(
+            sidebar_html
+        )
 
         if save_structure:
-            await self.parsing_service.save_debug_structure(sidebar_structure, config_values, structure_filename)
+            await self.parsing_service.save_debug_structure(
+                sidebar_structure, config_values, structure_filename
+            )
 
-        self.storage_service.save_structure_to_output(sidebar_structure, structure_filepath)
+        self.storage_service.save_structure_to_output(
+            sidebar_structure, structure_filepath
+        )
         return sidebar_structure
 
-    async def _handle_resume_check(self, sidebar_structure: SidebarStructure, config_values: Dict, resume_info: bool, force: bool) -> None:
+    async def _handle_resume_check(
+        self,
+        sidebar_structure: SidebarStructure,
+        config_values: Dict,
+        resume_info: bool,
+        force: bool,
+    ) -> None:
         """Handle resume information display and validation.
 
         Sets up progress tracking with total item count and optionally displays
@@ -266,11 +284,16 @@ class Orchestrator:
         self.progress_service.set_total_items(len(valid_items))
 
         if resume_info:
-            existing_items, items_needing_processing = self.storage_service.check_existing_files(
-                valid_items, config_values["base_output_dir"]
+            existing_items, items_needing_processing = (
+                self.storage_service.check_existing_files(
+                    valid_items, config_values["base_output_dir"]
+                )
             )
             self.storage_service.display_resume_info(
-                valid_items, existing_items, items_needing_processing, config_values["base_output_dir"]
+                valid_items,
+                existing_items,
+                items_needing_processing,
+                config_values["base_output_dir"]
             )
             sys.exit(0)
 
@@ -309,7 +332,7 @@ class Orchestrator:
             valid_items, test_item_id, max_items
         )
 
-        logging.info(f"Processing {len(items_to_process)} items...")
+        self.logger.info("Processing items", count=len(items_to_process))
 
         # Process items with progress tracking
         await self._process_items_with_progress(items_to_process, config_values)
@@ -337,13 +360,21 @@ class Orchestrator:
         progress = self.progress_service.create_progress_display()
 
         with progress:
-            task_id = progress.add_task("Processing items...", total=len(items_to_process))
+            task_id = progress.add_task(
+                "Processing items...", total=len(items_to_process)
+            )
 
             for item in items_to_process:
                 try:
-                    await self._process_single_item(item, config_values, progress, task_id)
+                    await self._process_single_item(
+                        item, config_values, progress, task_id
+                    )
                 except Exception as e:
-                    logging.error(f"Failed to process item {item.get('id', 'unknown')}: {e}")
+                    self.logger.error(
+                        "Failed to process item",
+                        item_id=item.get('id', 'unknown'),
+                        error=str(e)
+                    )
                     continue
 
     async def _process_single_item(
@@ -371,16 +402,19 @@ class Orchestrator:
             Exception: If item processing fails.
         """
         # Handle both dict and SidebarItem objects
-        item_id = item.id if hasattr(item, 'id') else item.get('id')
         item_text = item.text if hasattr(item, 'text') else item.get('text', 'Unknown')
 
         progress.update(task_id, description=f"Processing: {item_text}")
 
         # Check if file already exists (unless force mode)
         if not config_values.get('force', False):
-            output_path = self.storage_service.get_output_path(item, config_values["base_output_dir"])
+            output_path = self.storage_service.get_output_path(
+                item, config_values["base_output_dir"]
+            )
             if output_path.exists():
-                logging.info(f"Skipping existing file: {output_path}")
+                self.logger.info(
+                    "Skipping existing file", path=str(output_path)
+                )
                 progress.advance(task_id)
                 return
 
@@ -389,10 +423,12 @@ class Orchestrator:
         content = await self.storage_service.extract_content_for_item(item)
 
         # Save content to file
-        await self.storage_service.save_content_to_file(content, item, config_values)
+        await self.storage_service.save_content_to_file(
+            content, item, config_values
+        )
 
         progress.advance(task_id)
-        logging.info(f"Completed processing: {item_text}")
+        self.logger.info("Completed processing", item_text=item_text)
 
     async def _cleanup(self) -> None:
         """Perform cleanup operations.
@@ -411,6 +447,6 @@ class Orchestrator:
         """
         try:
             await self.navigation_service.cleanup()
-            logging.info("Cleanup completed successfully")
+            self.logger.info("Cleanup completed successfully")
         except Exception as e:
-            logging.error(f"Error during cleanup: {e}")
+            self.logger.error("Error during cleanup", error=str(e))

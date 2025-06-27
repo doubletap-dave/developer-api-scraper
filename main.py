@@ -10,6 +10,7 @@ import typer
 from rich.console import Console
 
 from wyrm.services import Orchestrator
+from wyrm.services.logging_service import LoggingService
 
 console = Console()
 
@@ -105,6 +106,11 @@ def main(
     Returns:
         None: Function exits via typer.Exit or completes successfully.
     """
+    # Setup logging first (before any other operations)
+    logging_service = LoggingService()
+    effective_log_level = log_level if log_level else ("DEBUG" if debug else "INFO")
+    logging_service.setup_logging(log_level=effective_log_level)
+
     # Convert save flags to boolean
     save_structure_flag = save_structure is not None
     save_html_flag = save_html is not None
