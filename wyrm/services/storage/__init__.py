@@ -6,7 +6,7 @@ This package provides storage operations through specialized sub-modules:
 - ResumeManager: Handles resume information and status management
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 from pathlib import Path
 from selenium.webdriver.remote.webdriver import WebDriver
 
@@ -30,21 +30,31 @@ class StorageService:
 
     async def save_content_for_item(
         self,
-        item: Dict,
+        item,
         driver: WebDriver,
         config_values: Dict
     ) -> bool:
         """Extract and save content for a single item.
 
         Args:
-            item: Item dictionary containing metadata
+            item: Item (SidebarItem model or dict) containing metadata
             driver: WebDriver instance
             config_values: Configuration values
 
         Returns:
             True if content was saved successfully, False otherwise
         """
-        item_text = item.get("text", "Unknown Item")
+        # Handle both SidebarItem models and dict items for backward compatibility
+        if hasattr(item, 'text'):
+            item_text = item.text
+            header = item.header
+            menu = item.menu
+            item_id = item.id
+        else:
+            item_text = item.get("text", "Unknown Item")
+            header = item.get("header")
+            menu = item.get("menu")
+            item_id = item.get("id")
 
         # Extract content using content extractor
         extracted_content = await self.content_extractor.extract_and_convert_content(driver)
@@ -52,8 +62,8 @@ class StorageService:
         # Save content if extracted
         if extracted_content:
             saved = await self.file_operations.save_markdown(
-                header=item.get("header"),
-                menu=item.get("menu"),
+                header=header,
+                menu=menu,
                 item_text=item_text,
                 markdown_content=extracted_content,
                 base_output_dir=config_values["base_output_dir"],
@@ -62,7 +72,7 @@ class StorageService:
             return saved
         else:
             import logging
-            logging.warning(f"No content extracted for item {item.get('id')} ('{item_text}').")
+            logging.warning(f"No content extracted for item {item_id} ('{item_text}').")
             return False
 
     # Delegate methods to resume manager
@@ -77,9 +87,9 @@ class StorageService:
 
     def check_existing_files(
         self,
-        items: List[Dict],
+        items,
         base_output_dir: Path
-    ) -> Tuple[List[Dict], List[Dict]]:
+    ):
         """Check which items already have saved files."""
         return self.resume_manager.check_existing_files(items, base_output_dir)
 

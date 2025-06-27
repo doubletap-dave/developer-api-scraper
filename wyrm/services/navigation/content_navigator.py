@@ -32,14 +32,18 @@ class ContentNavigator:
         self.driver = driver
         self.selectors = SelectorsService()
 
-    async def click_item_and_wait(self, item: Dict, config_values: Dict) -> None:
+    async def click_item_and_wait(self, item, config_values: Dict) -> None:
         """Click sidebar item and wait for content to load.
 
         Args:
             item: Item dictionary containing ID
             config_values: Configuration values for timeouts and delays
         """
-        item_id = item.get("id")
+        # Handle both SidebarItem models and dict items for backward compatibility
+        if hasattr(item, 'id'):
+            item_id = item.id
+        else:
+            item_id = item.get("id")
 
         # Click the sidebar item
         await self._click_sidebar_item(

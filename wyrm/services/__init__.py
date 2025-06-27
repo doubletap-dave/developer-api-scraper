@@ -6,7 +6,7 @@ of the application functionality.
 
 from .configuration_service import ConfigurationService
 from .navigation import NavigationService
-from .parsing_service import ParsingService
+from .parsing import ParsingService
 from .progress_service import ProgressService
 from .selectors_service import SelectorsService
 from .storage import StorageService

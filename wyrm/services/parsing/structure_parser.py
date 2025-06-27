@@ -1,56 +1,25 @@
-"""Parsing service for Wyrm application.
+"""Structure parsing functionality for sidebar HTML processing.
 
-This service handles sidebar structure parsing, HTML content processing,
-item validation and filtering, and debug HTML/structure saving.
+This module handles the core HTML parsing logic, converting raw sidebar HTML
+into structured data and flattening it for processing.
 """
 
-import json
 import logging
-from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
 
 from bs4 import BeautifulSoup, Tag
 
-from .selectors_service import SelectorsService
+from ..selectors_service import SelectorsService
 
 
-class ParsingService:
-    """Service for handling parsing operations."""
+class StructureParser:
+    """Handles HTML parsing and structure flattening operations."""
 
     def __init__(self) -> None:
-        """Initialize the Parsing service."""
+        """Initialize the structure parser."""
         self.selectors = SelectorsService()
 
-    async def parse_sidebar_structure(self, sidebar_html: str) -> Dict:
-        """Parse sidebar HTML into structured format.
-
-        Args:
-            sidebar_html: Raw sidebar HTML content
-
-        Returns:
-            Parsed sidebar structure dictionary
-        """
-        logging.info("Parsing sidebar structure...")
-
-        # Parse HTML structure
-        structured_data = self._map_sidebar_structure(sidebar_html)
-
-        # Flatten the structure for processing
-        flattened_items = self._flatten_sidebar_structure(structured_data)
-
-        # Build the final structure
-        sidebar_structure = {
-            "structured_data": structured_data,
-            "items": flattened_items
-        }
-
-        # Count valid items
-        valid_items = self._get_valid_items(sidebar_structure)
-        logging.info(f"Found {len(valid_items)} valid items in sidebar structure.")
-
-        return sidebar_structure
-
-    def _map_sidebar_structure(self, sidebar_html: str) -> List[Dict]:
+    def map_sidebar_structure(self, sidebar_html: str) -> List[Dict]:
         """Parse the sidebar HTML and map its structure.
 
         Builds: List[Header] -> Header[Children] -> Child[Item | Menu] -> Menu[Children]
@@ -208,7 +177,7 @@ class ParsingService:
         logging.info(f"Finished parsing structure. Found {len(structure_by_header)} header groups.")
         return structure_by_header
 
-    def _flatten_sidebar_structure(self, structured_data: List[Dict]) -> List[Dict]:
+    def flatten_sidebar_structure(self, structured_data: List[Dict]) -> List[Dict]:
         """Flatten the nested structure into a single list of items, preserving hierarchy info."""
         flattened_list: List[Dict] = []
         for header_group in structured_data:
@@ -274,205 +243,3 @@ class ParsingService:
                     parent_menu_text=item_text,  # This menu is the parent
                     level=level + 1,
                 )
-
-    async def save_debug_html(
-        self,
-        sidebar_html: str,
-        config_values: Dict,
-        html_filename: Optional[str] = None,
-    ) -> None:
-        """Save raw HTML to debug directory.
-
-        Args:
-            sidebar_html: Raw sidebar HTML content
-            config_values: Configuration values containing debug directory
-            html_filename: Custom HTML filename (optional)
-        """
-        try:
-            filename = html_filename or config_values["default_html_filename"]
-            html_path = config_values["debug_output_dir"] / filename
-            html_path.parent.mkdir(parents=True, exist_ok=True)
-
-            with open(html_path, "w", encoding="utf-8") as f:
-                f.write(sidebar_html)
-
-            logging.info(f"Debug HTML saved to: {html_path}")
-        except Exception as e:
-            logging.error(f"Failed to save debug HTML: {e}")
-
-    async def save_debug_structure(
-        self,
-        sidebar_structure: Dict,
-        config_values: Dict,
-        structure_filename: Optional[str] = None,
-    ) -> None:
-        """Save parsed structure to debug directory.
-
-        Args:
-            sidebar_structure: Parsed sidebar structure
-            config_values: Configuration values containing debug directory
-            structure_filename: Custom structure filename (optional)
-        """
-        try:
-            filename = structure_filename or config_values["default_structure_filename"]
-            structure_path = config_values["debug_output_dir"] / filename
-            structure_path.parent.mkdir(parents=True, exist_ok=True)
-
-            with open(structure_path, "w", encoding="utf-8") as f:
-                json.dump(sidebar_structure, f, indent=2, ensure_ascii=False)
-
-            logging.info(f"Debug structure saved to: {structure_path}")
-        except Exception as e:
-            logging.error(f"Failed to save debug structure: {e}")
-
-    def _get_valid_items(self, sidebar_structure: Dict) -> List[Dict]:
-        """Get valid items from sidebar structure.
-
-        Args:
-            sidebar_structure: Parsed sidebar structure
-
-        Returns:
-            List of valid items with required fields
-        """
-        items = sidebar_structure.get("items", [])
-        valid_items = []
-
-        for item in items:
-            if self._is_valid_item(item):
-                valid_items.append(item)
-            else:
-                logging.debug(f"Skipping invalid item: {item}")
-
-        return valid_items
-
-    def _is_valid_item(self, item: Dict) -> bool:
-        """Check if an item is valid for processing.
-
-        Args:
-            item: Item dictionary to validate
-
-        Returns:
-            True if item is valid, False otherwise
-        """
-        # Check required fields
-        required_fields = ["id", "text"]
-        for field in required_fields:
-            if not item.get(field):
-                return False
-
-        # Additional validation can be added here
-        return True
-
-    def filter_items_for_processing(
-        self,
-        valid_items: List[Dict],
-        max_items: Optional[int] = None,
-        test_item_id: Optional[str] = None,
-    ) -> List[Dict]:
-        """Filter items based on processing criteria.
-
-        Args:
-            valid_items: List of valid items
-            max_items: Maximum number of items to process
-            test_item_id: Specific item ID to process (deprecated)
-
-        Returns:
-            Filtered list of items for processing
-        """
-        items_to_process = valid_items.copy()
-
-        # Handle deprecated test_item_id parameter
-        if test_item_id:
-            logging.warning(
-                "The --test-item-id parameter is deprecated. "
-                "Use --max-items=1 for testing with a single item."
-            )
-            items_to_process = [
-                item for item in items_to_process if item.get("id") == test_item_id
-            ]
-            if not items_to_process:
-                logging.warning(f"No item found with ID: {test_item_id}")
-
-        # Apply max_items limit
-        if max_items is not None and max_items > 0:
-            items_to_process = items_to_process[:max_items]
-            logging.info(f"Limited to first {max_items} items for processing.")
-
-        return items_to_process
-
-    def load_existing_structure(self, structure_filepath: Path) -> Optional[Dict]:
-        """Load existing sidebar structure from file.
-
-        Args:
-            structure_filepath: Path to existing structure file
-
-        Returns:
-            Loaded structure dictionary or None if loading fails
-        """
-        try:
-            if structure_filepath.exists():
-                logging.info(f"Loading existing structure from: {structure_filepath}")
-                with open(structure_filepath, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            else:
-                logging.debug(f"Structure file does not exist: {structure_filepath}")
-                return None
-        except Exception as e:
-            logging.error(f"Failed to load existing structure: {e}")
-            return None
-
-    def get_structure_filepath(self, config_values: Dict) -> Path:
-        """Get the filepath for the sidebar structure.
-
-        Args:
-            config_values: Configuration values containing debug directory
-
-        Returns:
-            Path to structure file in debug directory
-        """
-        return config_values["debug_output_dir"] / "sidebar_structure.json"
-
-    def save_structure_to_file(self, structure_map: List[Dict], filepath: Path) -> None:
-        """Save the structured sidebar map to a JSON file.
-
-        Args:
-            structure_map: The structured sidebar data
-            filepath: Path where to save the structure
-        """
-        try:
-            # Ensure the directory exists
-            filepath.parent.mkdir(parents=True, exist_ok=True)
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(structure_map, f, indent=4, ensure_ascii=False)
-            logging.info(f"Successfully saved sidebar structure map to: {filepath}")
-        except IOError as e:
-            logging.error(f"Error saving sidebar structure map to {filepath}: {e}")
-        except Exception as e:
-            logging.exception(f"Unexpected error saving sidebar structure map: {e}")
-
-    def load_structure_from_file(self, filepath: Path) -> Optional[List[Dict]]:
-        """Load the structured sidebar map from a JSON file.
-
-        Args:
-            filepath: Path to the structure file
-
-        Returns:
-            Loaded structure data or None if loading fails
-        """
-        if not filepath.exists():
-            logging.info(f"Structure map file not found: {filepath}")
-            return None
-        try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                structure_map = json.load(f)
-            logging.info(f"Successfully loaded sidebar structure map from: {filepath}")
-            return structure_map
-        except json.JSONDecodeError as e:
-            logging.error(f"Error decoding JSON from {filepath}: {e}")
-            return None
-        except IOError as e:
-            logging.error(f"Error reading sidebar structure map from {filepath}: {e}")
-            return None
-        except Exception as e:
-            logging.exception(f"Unexpected error loading sidebar structure map: {e}")
-            return None

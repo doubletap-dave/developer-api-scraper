@@ -11,7 +11,7 @@ import logging
 from typing import Dict, Optional
 
 from selenium.common.exceptions import TimeoutException
-from selenium.webdriver.common.by import By
+
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
@@ -47,7 +47,7 @@ class NavigationService:
             self.menu_expander = MenuExpander(driver)
             self.content_navigator = ContentNavigator(driver)
 
-    async def navigate_and_wait(self, config: Dict, config_values: Dict) -> str:
+    async def navigate_and_wait(self, config, config_values: Dict) -> str:
         """Navigate to URL and wait for sidebar to load.
 
         Args:
@@ -61,7 +61,11 @@ class NavigationService:
         if not driver:
             raise RuntimeError("WebDriver not initialized")
 
-        url = config.get("url") or config.get("target_url")
+        # Handle both AppConfig models and dict config for backward compatibility
+        if hasattr(config, 'target_url'):
+            url = config.target_url
+        else:
+            url = config.get("url") or config.get("target_url")
         if not url:
             raise ValueError("No URL specified in configuration")
 
@@ -114,13 +118,13 @@ class NavigationService:
             raise
 
     # Delegate methods to sub-modules
-    async def expand_menu_for_item(self, item: Dict, config_values: Dict) -> None:
+    async def expand_menu_for_item(self, item, config_values: Dict) -> None:
         """Handle menu expansion for a specific item."""
         if not self.menu_expander:
             raise RuntimeError("MenuExpander not initialized")
         await self.menu_expander.expand_menu_for_item(item, config_values)
 
-    async def click_item_and_wait(self, item: Dict, config_values: Dict) -> None:
+    async def click_item_and_wait(self, item, config_values: Dict) -> None:
         """Click sidebar item and wait for content to load."""
         if not self.content_navigator:
             raise RuntimeError("ContentNavigator not initialized")
@@ -130,7 +134,7 @@ class NavigationService:
         """Get the current WebDriver instance."""
         return self.driver_manager.get_driver()
 
-    async def cleanup(self, config: Dict) -> None:
+    async def cleanup(self, config) -> None:
         """Clean up the WebDriver and perform any necessary cleanup."""
         await self.driver_manager.cleanup(config)
         # Reset helper classes

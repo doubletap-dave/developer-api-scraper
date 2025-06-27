@@ -5,7 +5,7 @@ This module handles expanding sidebar menus and waiting for UI elements.
 
 import asyncio
 import logging
-from typing import Dict, Optional
+from typing import Dict
 
 from selenium.common.exceptions import (
     ElementClickInterceptedException,
@@ -32,15 +32,22 @@ class MenuExpander:
         self.driver = driver
         self.selectors = SelectorsService()
 
-    async def expand_menu_for_item(self, item: Dict, config_values: Dict) -> None:
+    async def expand_menu_for_item(self, item, config_values: Dict) -> None:
         """Handle menu expansion and item clicking for a specific item.
 
         Args:
             item: Item dictionary containing menu and ID information
             config_values: Configuration values for timeouts and delays
         """
-        item_id = item.get("id")
-        menu_text = item.get("menu")
+        # Handle both SidebarItem models and dict items for backward compatibility
+        if hasattr(item, 'id'):
+            item_id = item.id
+            menu_text = item.menu
+            parent_menu_text = item.parent_menu_text
+        else:
+            item_id = item.get("id")
+            menu_text = item.get("menu")
+            parent_menu_text = item.get("parent_menu_text")
 
         # Smart menu expansion
         if menu_text:
@@ -60,7 +67,6 @@ class MenuExpander:
                 logging.warning(f"Error during menu expansion for '{menu_text}': {expand_err}")
 
         # Legacy fallback
-        parent_menu_text = item.get("parent_menu_text")
         if parent_menu_text and parent_menu_text != menu_text:
             logging.debug(f"Legacy fallback: expanding parent menu '{parent_menu_text}'")
             try:

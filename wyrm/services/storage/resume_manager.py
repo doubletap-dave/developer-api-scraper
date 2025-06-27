@@ -7,7 +7,7 @@ and debug operations.
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from selenium.webdriver.remote.webdriver import WebDriver
 
@@ -51,9 +51,9 @@ class ResumeManager:
 
     def check_existing_files(
         self,
-        items: List[Dict],
+        items,
         base_output_dir: Path
-    ) -> Tuple[List[Dict], List[Dict]]:
+    ):
         """Check which items already have saved files.
 
         Args:
@@ -67,22 +67,34 @@ class ResumeManager:
         items_needing_processing = []
 
         for item in items:
+            # Handle both SidebarItem models and dict items for backward compatibility
+            if hasattr(item, 'text'):
+                header = item.header
+                menu = item.menu
+                item_text = item.text
+                item_id = item.id
+            else:
+                header = item.get("header")
+                menu = item.get("menu")
+                item_text = item.get("text", "")
+                item_id = item.get("id")
+
             # Generate the expected file path
             from .file_operations import FileOperations
             file_ops = FileOperations()
             expected_path = file_ops._get_output_file_path(
-                header=item.get("header"),
-                menu=item.get("menu"),
-                item_text=item.get("text", ""),
+                header=header,
+                menu=menu,
+                item_text=item_text,
                 base_output_dir=base_output_dir
             )
 
             if expected_path.exists():
                 existing_items.append(item)
-                logging.debug(f"File exists for item {item.get('id')}: {expected_path}")
+                logging.debug(f"File exists for item {item_id}: {expected_path}")
             else:
                 items_needing_processing.append(item)
-                logging.debug(f"File missing for item {item.get('id')}: {expected_path}")
+                logging.debug(f"File missing for item {item_id}: {expected_path}")
 
         return existing_items, items_needing_processing
 
@@ -99,8 +111,14 @@ class ResumeManager:
         """
         try:
             structure_filepath.parent.mkdir(parents=True, exist_ok=True)
+            # Handle SidebarStructure models by converting to dict
+            if hasattr(sidebar_structure, 'dict'):
+                structure_data = sidebar_structure.dict()
+            else:
+                structure_data = sidebar_structure
+
             with open(structure_filepath, 'w', encoding='utf-8') as f:
-                json.dump(sidebar_structure, f, indent=4, ensure_ascii=False)
+                json.dump(structure_data, f, indent=4, ensure_ascii=False)
             logging.info(f"Sidebar structure saved to: {structure_filepath}")
         except Exception as e:
             logging.error(f"Failed to save sidebar structure: {e}")
@@ -124,7 +142,7 @@ class ResumeManager:
         existing_count = len(existing_items)
         remaining_count = len(items_needing_processing)
 
-        print(f"\n📊 Resume Information")
+        print("\n📊 Resume Information")
         print(f"{'='*50}")
         print(f"📁 Output Directory: {base_output_dir}")
         print(f"📄 Total Items Found: {total_items}")
@@ -132,16 +150,21 @@ class ResumeManager:
         print(f"⏳ Files Needing Processing: {remaining_count}")
 
         if remaining_count > 0:
-            print(f"\n🔄 Next items to process:")
+            print("\n🔄 Next items to process:")
             for i, item in enumerate(items_needing_processing[:5]):  # Show first 5
-                item_text = item.get("text", "Unknown")
-                item_id = item.get("id", "Unknown")
+                # Handle both SidebarItem models and dict items
+                if hasattr(item, 'text'):
+                    item_text = item.text
+                    item_id = item.id
+                else:
+                    item_text = item.get("text", "Unknown")
+                    item_id = item.get("id", "Unknown")
                 print(f"  {i+1}. {item_text} (ID: {item_id})")
 
             if remaining_count > 5:
                 print(f"  ... and {remaining_count - 5} more items")
         else:
-            print(f"\n🎉 All items have been processed!")
+            print("\n🎉 All items have been processed!")
 
         print(f"{'='*50}")
 

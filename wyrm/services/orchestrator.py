@@ -4,14 +4,16 @@ This service coordinates the entire scraping workflow by delegating to
 specialized services for configuration, navigation, parsing, storage, and progress.
 """
 
-import asyncio
+
 import logging
 import sys
 from typing import Dict, List, Optional
 
+from wyrm.models.config import AppConfig
+from wyrm.models.scrape import SidebarStructure
 from wyrm.services.configuration_service import ConfigurationService
 from wyrm.services.navigation import NavigationService
-from wyrm.services.parsing_service import ParsingService
+from wyrm.services.parsing import ParsingService
 from wyrm.services.progress_service import ProgressService
 from wyrm.services.storage import StorageService
 
@@ -77,7 +79,7 @@ class Orchestrator:
             config = self.config_service.merge_cli_overrides(config, cli_args)
 
             # Setup logging
-            effective_log_level = log_level or config.get("logging", {}).get("level", "INFO")
+            effective_log_level = log_level or config.log_level
             if debug:
                 effective_log_level = "DEBUG"
                 save_structure = True
@@ -113,7 +115,7 @@ class Orchestrator:
 
     async def _handle_sidebar_structure(
         self,
-        config: Dict,
+        config: AppConfig,
         config_values: Dict,
         save_structure: bool,
         save_html: bool,
@@ -121,7 +123,7 @@ class Orchestrator:
         html_filename: Optional[str],
         resume_info: bool,
         force: bool,
-    ) -> Dict:
+    ) -> SidebarStructure:
         """Handle sidebar structure loading or parsing."""
         structure_filepath = self.parsing_service.get_structure_filepath(config_values)
 
@@ -142,14 +144,14 @@ class Orchestrator:
 
     async def _perform_live_parsing(
         self,
-        config: Dict,
+        config: AppConfig,
         config_values: Dict,
         save_structure: bool,
         save_html: bool,
         structure_filename: Optional[str],
         html_filename: Optional[str],
         structure_filepath,
-    ) -> Dict:
+    ) -> SidebarStructure:
         """Perform live parsing of sidebar structure."""
         # Initialize driver and navigate
         await self.navigation_service.initialize_driver(config)
@@ -168,7 +170,7 @@ class Orchestrator:
         self.storage_service.save_structure_to_output(sidebar_structure, structure_filepath)
         return sidebar_structure
 
-    async def _handle_resume_check(self, sidebar_structure: Dict, config_values: Dict, resume_info: bool, force: bool) -> None:
+    async def _handle_resume_check(self, sidebar_structure: SidebarStructure, config_values: Dict, resume_info: bool, force: bool) -> None:
         """Handle resume information display."""
         valid_items = self.parsing_service._get_valid_items(sidebar_structure)
         self.progress_service.set_total_items(len(valid_items))
@@ -184,7 +186,7 @@ class Orchestrator:
 
     async def _process_items_from_structure(
         self,
-        sidebar_structure: Dict,
+        sidebar_structure: SidebarStructure,
         config_values: Dict,
         force: bool,
         test_item_id: Optional[str],
@@ -233,15 +235,21 @@ class Orchestrator:
 
     async def _process_single_item(
         self,
-        item: Dict,
+        item,
         config_values: Dict,
         progress,
         task_id: int,
     ) -> None:
         """Process a single item."""
-        item_id = item.get("id")
-        item_text = item.get("text", "Unknown Item")
-        item_type = item.get("type", "item")
+        # Handle both SidebarItem models and dict items for backward compatibility
+        if hasattr(item, 'id'):
+            item_id = item.id
+            item_text = item.text
+            item_type = item.type
+        else:
+            item_id = item.get("id")
+            item_text = item.get("text", "Unknown Item")
+            item_type = item.get("type", "item")
 
         current_item_desc = f"{item_type.capitalize()}: '{item_text}' (ID: {item_id})"
         progress.update(task_id, description=f"Processing {current_item_desc}")

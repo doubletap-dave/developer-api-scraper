@@ -5,7 +5,7 @@ This module handles WebDriver setup, configuration, and cleanup operations.
 
 import asyncio
 import logging
-from typing import Dict, Optional
+from typing import Optional
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -24,35 +24,43 @@ class DriverManager:
         """Initialize the driver manager."""
         self.driver: Optional[WebDriver] = None
 
-    async def initialize_driver(self, config: Dict) -> None:
+    async def initialize_driver(self, config) -> None:
         """Initialize the WebDriver based on configuration.
 
         Args:
-            config: Configuration dictionary containing webdriver settings
+            config: Configuration (AppConfig model or dict) containing webdriver settings
         """
-        webdriver_config = config.get("webdriver", {})
+        # Handle both AppConfig models and dict config for backward compatibility
+        if hasattr(config, 'webdriver'):
+            webdriver_config = config.webdriver
+        else:
+            webdriver_config = config.get("webdriver", {})
         self.driver = await self._setup_driver(webdriver_config)
         logging.info("WebDriver initialized successfully")
 
     async def _setup_driver(
         self,
-        webdriver_config: Dict,
+        webdriver_config,
         browser: Optional[str] = None,
         headless: Optional[bool] = None,
     ) -> WebDriver:
         """Set up and configure the WebDriver.
 
         Args:
-            webdriver_config: WebDriver configuration
+            webdriver_config: WebDriver configuration (WebDriverConfig model or dict)
             browser: Browser type override
             headless: Headless mode override
 
         Returns:
             Configured WebDriver instance
         """
-        # Determine browser and headless mode
-        browser_type = browser or webdriver_config.get("browser", "chrome").lower()
-        is_headless = headless if headless is not None else webdriver_config.get("headless", True)
+        # Handle both WebDriverConfig models and dict config for backward compatibility
+        if hasattr(webdriver_config, 'browser'):
+            browser_type = browser or webdriver_config.browser.lower()
+            is_headless = headless if headless is not None else webdriver_config.headless
+        else:
+            browser_type = browser or webdriver_config.get("browser", "chrome").lower()
+            is_headless = headless if headless is not None else webdriver_config.get("headless", True)
 
         logging.info(f"Setting up {browser_type} driver (headless: {is_headless})")
 
@@ -123,7 +131,7 @@ class DriverManager:
         """
         return self.driver
 
-    async def cleanup(self, config: Dict) -> None:
+    async def cleanup(self, config) -> None:
         """Clean up the WebDriver and perform any necessary cleanup.
 
         Args:
@@ -132,11 +140,19 @@ class DriverManager:
         if self.driver:
             try:
                 # Check if running in non-headless mode and pause if configured
-                webdriver_config = config.get("webdriver", {})
-                debug_settings = config.get("debug_settings", {})
-
-                if not webdriver_config.get("headless", True):
+                # Handle both AppConfig models and dict config for backward compatibility
+                if hasattr(config, 'webdriver'):
+                    webdriver_config = config.webdriver
+                    debug_settings = config.debug_settings
+                    is_headless = webdriver_config.headless
+                    pause_seconds = debug_settings.non_headless_pause_seconds
+                else:
+                    webdriver_config = config.get("webdriver", {})
+                    debug_settings = config.get("debug_settings", {})
+                    is_headless = webdriver_config.get("headless", True)
                     pause_seconds = debug_settings.get("non_headless_pause_seconds", 10)
+
+                if not is_headless:
                     if pause_seconds > 0:
                         logging.info(f"Non-headless mode: pausing for {pause_seconds} seconds before cleanup...")
                         await asyncio.sleep(pause_seconds)
