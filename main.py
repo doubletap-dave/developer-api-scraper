@@ -398,110 +398,116 @@ async def main():
                 current_item_desc = f"{item_type.capitalize()}: '{item_text}' (ID: {item_id})"
                 progress.update(task_id, description=f"Processing {current_item_desc}") # Update description
 
-                # Should always have ID due to filtering above, but check anyway
-                if not item_id:
-                    logging.warning(f"Skipping item {item_text} - Missing ID.")
-                    skipped_count += 1
-                    progress.update(task_id, advance=1)
-                    continue
+                try:
+                    # Should always have ID due to filtering above, but check anyway
+                    if not item_id:
+                        logging.warning(f"Skipping item {item_text} - Missing ID.")
+                        skipped_count += 1
+                        progress.update(task_id, advance=1)
+                        continue
 
-                logging.info(f"Processing {current_item_desc}")
-                # logging.debug(f"Target output file: {markdown_filepath}") # Path generated inside save_markdown
+                    logging.info(f"Processing {current_item_desc}")
+                    # logging.debug(f"Target output file: {markdown_filepath}") # Path generated inside save_markdown
 
-                # Check if driver is still valid inside loop
-                if not driver:
-                    logging.error("WebDriver is not initialized. Cannot process item.")
-                    error_count += 1
-                    progress.update(task_id, advance=1, description=f"Error processing {item_text} - No Driver")
-                    continue # Skip to next item
+                    # Check if driver is still valid inside loop
+                    if not driver:
+                        logging.error("WebDriver is not initialized. Cannot process item.")
+                        error_count += 1
+                        progress.update(task_id, advance=1, description=f"Error processing {item_text} - No Driver")
+                        continue # Skip to next item
 
-                # --- RE-ENABLE/ENSURE Parent Menu Expansion --- #
-                # Always try to expand the immediate parent menu if it exists,
-                # regardless of whether structure was loaded or live-parsed.
-                parent_menu_text = item.get("parent_menu_text")
-                if parent_menu_text:
-                    logging.debug(
-                        f"Ensuring parent menu '{parent_menu_text}' is expanded before clicking '{item_text}'"
-                    )
-                    try:
-                        await navigation.expand_specific_menu(
-                            driver, parent_menu_text, timeout=navigation_timeout, expand_delay=expand_delay
+                    # --- RE-ENABLE/ENSURE Parent Menu Expansion --- #
+                    # Always try to expand the immediate parent menu if it exists,
+                    # regardless of whether structure was loaded or live-parsed.
+                    parent_menu_text = item.get("parent_menu_text")
+                    if parent_menu_text:
+                        logging.debug(
+                            f"Ensuring parent menu '{parent_menu_text}' is expanded before clicking '{item_text}'"
                         )
-                        # Brief pause after potential expansion
-                        await asyncio.sleep(0.3)
-                    except Exception as expand_err:
-                        logging.warning(f"Could not ensure parent menu '{parent_menu_text}' was expanded: {expand_err}")
-                        # Attempt click anyway, maybe it's already expanded or error is transient
-                # --- END Parent Menu Expansion --- #
+                        try:
+                            await navigation.expand_specific_menu(
+                                driver, parent_menu_text, timeout=navigation_timeout, expand_delay=expand_delay
+                            )
+                            # Brief pause after potential expansion
+                            await asyncio.sleep(0.3)
+                        except Exception as expand_err:
+                            logging.warning(f"Could not ensure parent menu '{parent_menu_text}' was expanded: {expand_err}")
+                            # Attempt click anyway, maybe it's already expanded or error is transient
+                    # --- END Parent Menu Expansion --- #
 
-                # Use the robust click function
-                clicked = await navigation.click_sidebar_item(
-                    driver,
-                    item_id,
-                    timeout=navigation_timeout, # Use nav timeout for finding item
-                )
-                # Add delay manually if needed after the click attempt returns
-                await asyncio.sleep(post_click_delay)
-
-                if not clicked: # Check the return value if click_sidebar_item provides one (currently doesn't explicitly)
-                    # If click_sidebar_item raises exceptions on failure, this check might not be needed
-                    # If it returns bool, this check is useful.
-                    # Assuming for now it raises on failure, otherwise adjust logic here.
-                    pass # Error logged and exception raised within click_sidebar_item
-
-                # 2. Wait for Content and Extract
-                logging.debug(
-                    f"Waiting for content to load after clicking {item_id}... (Timeout: {content_wait_timeout}s)"
-                )
-                # Content wait/extraction needs the driver
-                await navigation.wait_for_content_update(
-                    driver, timeout=content_wait_timeout
-                )
-                logging.debug("Content area loaded.")
-
-                # Get content pane for debug HTML extraction
-                from wyrm import selectors
-                content_pane = driver.find_element(*selectors.CONTENT_PANE_INNER_HTML_TARGET)
-                debug_html_content = content_pane.get_attribute("innerHTML")
-                # Save debug HTML for analysis
-                if args.debug:
-                    debug_html_path = debug_output_dir / f"page_content_{item_id}.html"
-                    debug_html_path.parent.mkdir(parents=True, exist_ok=True)
-                    with open(debug_html_path, 'w', encoding='utf-8') as f:
-                        f.write(debug_html_content)
-                    logging.debug(f"Saved debug HTML to: {debug_html_path}")
-
-                # Extract content
-                extracted_content = await content_extractor.extract_and_convert_content(driver)
-
-                # 3. Save Content
-                if extracted_content:
-                    logging.debug(f"Extracted markdown content (length: {len(extracted_content)}). Saving...")
-                    # Call the correct save function which handles path generation
-                    saved = await storage.save_markdown(
-                        header=item.get("header"),
-                        menu=item.get("menu"),
-                        item_text=item_text,
-                        markdown_content=extracted_content,
-                        base_output_dir=base_output_dir,
-                        overwrite=args.force,
+                    # Use the robust click function
+                    clicked = await navigation.click_sidebar_item(
+                        driver,
+                        item_id,
+                        timeout=navigation_timeout, # Use nav timeout for finding item
                     )
-                    if saved:
-                         processed_count += 1
-                         progress.update(task_id, description=f"Saved {item_text}")
-                    else:
-                        # save_markdown logs errors/skips, update counters based on return
-                        if Path(storage.get_output_file_path(item.get("header"), item.get("menu"), item_text, base_output_dir)).exists() and not args.force:
-                            skipped_count += 1 # It likely skipped because file exists
+                    # Add delay manually if needed after the click attempt returns
+                    await asyncio.sleep(post_click_delay)
+
+                    if not clicked: # Check the return value if click_sidebar_item provides one (currently doesn't explicitly)
+                        # If click_sidebar_item raises exceptions on failure, this check might not be needed
+                        # If it returns bool, this check is useful.
+                        # Assuming for now it raises on failure, otherwise adjust logic here.
+                        pass # Error logged and exception raised within click_sidebar_item
+
+                    # 2. Wait for Content and Extract
+                    logging.debug(
+                        f"Waiting for content to load after clicking {item_id}... (Timeout: {content_wait_timeout}s)"
+                    )
+                    # Content wait/extraction needs the driver
+                    await navigation.wait_for_content_update(
+                        driver, timeout=content_wait_timeout
+                    )
+                    logging.debug("Content area loaded.")
+
+                    # Get content pane for debug HTML extraction
+                    from wyrm import selectors
+                    content_pane = driver.find_element(*selectors.CONTENT_PANE_INNER_HTML_TARGET)
+                    debug_html_content = content_pane.get_attribute("innerHTML")
+                    # Save debug HTML for analysis
+                    if args.debug:
+                        debug_html_path = debug_output_dir / f"page_content_{item_id}.html"
+                        debug_html_path.parent.mkdir(parents=True, exist_ok=True)
+                        with open(debug_html_path, 'w', encoding='utf-8') as f:
+                            f.write(debug_html_content)
+                        logging.debug(f"Saved debug HTML to: {debug_html_path}")
+
+                    # Extract content
+                    extracted_content = await content_extractor.extract_and_convert_content(driver)
+
+                    # 3. Save Content
+                    if extracted_content:
+                        logging.debug(f"Extracted markdown content (length: {len(extracted_content)}). Saving...")
+                        # Call the correct save function which handles path generation
+                        saved = await storage.save_markdown(
+                            header=item.get("header"),
+                            menu=item.get("menu"),
+                            item_text=item_text,
+                            markdown_content=extracted_content,
+                            base_output_dir=base_output_dir,
+                            overwrite=args.force,
+                        )
+                        if saved:
+                             processed_count += 1
+                             progress.update(task_id, advance=1, description=f"Saved {item_text}")
                         else:
-                            error_count += 1 # Assume error if not skipped and not saved
-                        progress.update(task_id, description=f"Skipped/Error saving {item_text}") # General update
-                else:
-                    logging.warning(
-                        f"No content extracted or converted for item {item_id} ('{item_text}')."
-                    )
-                    no_content_count += 1
-                    progress.update(task_id, description=f"No content for {item_text}")
+                            # save_markdown logs errors/skips, update counters based on return
+                            if Path(storage.get_output_file_path(item.get("header"), item.get("menu"), item_text, base_output_dir)).exists() and not args.force:
+                                skipped_count += 1 # It likely skipped because file exists
+                            else:
+                                error_count += 1 # Assume error if not skipped and not saved
+                            progress.update(task_id, advance=1, description=f"Skipped/Error saving {item_text}") # General update
+                    else:
+                        logging.warning(
+                            f"No content extracted or converted for item {item_id} ('{item_text}')."
+                        )
+                        no_content_count += 1
+                        progress.update(task_id, advance=1, description=f"No content for {item_text}")
+                        
+                except Exception as item_error:
+                    logging.error(f"Error processing item {item_text} (ID: {item_id}): {item_error}")
+                    error_count += 1
+                    progress.update(task_id, advance=1, description=f"Error: {item_text}")
 
     except KeyboardInterrupt:
         logging.warning("--- User interrupted execution ---")
