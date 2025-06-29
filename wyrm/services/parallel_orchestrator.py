@@ -65,6 +65,15 @@ class ParallelOrchestrator:
             self.logger.info("Parallel processing disabled, using sequential fallback")
             return await self._fallback_to_sequential(items, config, config_values)
 
+        try:
+            return await self._execute_parallel_processing(items, config, config_values)
+        except Exception as e:
+            return await self._handle_parallel_failure(e, items, config, config_values)
+
+    async def _execute_parallel_processing(
+        self, items: List[SidebarItem], config, config_values: Dict
+    ) -> Dict[str, int]:
+        """Execute the parallel processing workflow."""
         max_workers = config_values.get('max_concurrent_tasks', 3)
         task_delay = config_values.get('task_start_delay', 0.5)
 
@@ -75,83 +84,82 @@ class ParallelOrchestrator:
             task_start_delay=task_delay
         )
 
-        # Create semaphore to limit concurrent workers
         semaphore = asyncio.Semaphore(max_workers)
+        progress = self.progress_service.create_progress_display()
 
-        # Track results
-        results = {
-            'processed': 0,
-            'failed': 0,
-            'skipped': 0
-        }
+        with self.progress_service._suppress_console_logging():
+            with progress:
+                task_id = progress.add_task(
+                    "Processing items (parallel)...",
+                    total=len(items)
+                )
 
-        try:
-            # Create progress display
-            progress = self.progress_service.create_progress_display()
+                tasks = self._create_worker_tasks(
+                    items, config, config_values, semaphore, task_delay, progress, task_id
+                )
+                
+                return await self._collect_task_results(tasks)
 
-            with self.progress_service._suppress_console_logging():
-                with progress:
-                    task_id = progress.add_task(
-                        "Processing items (parallel)...",
-                        total=len(items)
-                    )
-
-                    # Create worker tasks
-                    tasks = []
-                    for i, item in enumerate(items):
-                        # Add delay between task starts to avoid overwhelming the server
-                        start_delay = i * task_delay
-
-                        task = asyncio.create_task(
-                            self._delayed_worker_start(
-                                i, item, config, config_values,
-                                semaphore, start_delay, progress, task_id
-                            )
-                        )
-                        tasks.append(task)
-
-                    # Wait for all tasks to complete
-                    task_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                    # Process results
-                    for i, result in enumerate(task_results):
-                        if isinstance(result, Exception):
-                            self.logger.error(
-                                "Worker task failed with exception",
-                                worker_id=i,
-                                error=str(result)
-                            )
-                            results['failed'] += 1
-                        elif result is True:
-                            results['processed'] += 1
-                        elif result is False:
-                            results['failed'] += 1
-                        else:
-                            # Assuming skipped items return None or similar
-                            results['skipped'] += 1
-
-            self.logger.info(
-                "Parallel processing completed",
-                processed=results['processed'],
-                failed=results['failed'],
-                skipped=results['skipped']
+    def _create_worker_tasks(
+        self, items: List[SidebarItem], config, config_values: Dict,
+        semaphore: asyncio.Semaphore, task_delay: float, progress, task_id: int
+    ) -> List[asyncio.Task]:
+        """Create worker tasks for parallel processing."""
+        tasks = []
+        for i, item in enumerate(items):
+            start_delay = i * task_delay
+            task = asyncio.create_task(
+                self._delayed_worker_start(
+                    i, item, config, config_values,
+                    semaphore, start_delay, progress, task_id
+                )
             )
+            tasks.append(task)
+        return tasks
 
-            return results
+    async def _collect_task_results(self, tasks: List[asyncio.Task]) -> Dict[str, int]:
+        """Collect and process results from worker tasks."""
+        results = {'processed': 0, 'failed': 0, 'skipped': 0}
+        task_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        except Exception as e:
-            self.logger.error(
-                "Parallel processing failed, attempting fallback",
-                error=str(e)
-            )
-
-            # Attempt fallback to sequential processing
-            max_retries = config_values.get('max_parallel_retries', 2)
-            if max_retries > 0:
-                self.logger.info("Falling back to sequential processing")
-                return await self._fallback_to_sequential(items, config, config_values)
+        for i, result in enumerate(task_results):
+            if isinstance(result, Exception):
+                self.logger.error(
+                    "Worker task failed with exception",
+                    worker_id=i,
+                    error=str(result)
+                )
+                results['failed'] += 1
+            elif result is True:
+                results['processed'] += 1
+            elif result is False:
+                results['failed'] += 1
             else:
-                raise
+                results['skipped'] += 1
+
+        self.logger.info(
+            "Parallel processing completed",
+            processed=results['processed'],
+            failed=results['failed'],
+            skipped=results['skipped']
+        )
+        return results
+
+    async def _handle_parallel_failure(
+        self, error: Exception, items: List[SidebarItem], config, config_values: Dict
+    ) -> Dict[str, int]:
+        """Handle parallel processing failure and attempt fallback."""
+        self.logger.error(
+            "Parallel processing failed, attempting fallback",
+            error=str(error)
+        )
+
+        max_retries = config_values.get('max_parallel_retries', 2)
+        if max_retries > 0:
+            self.logger.info("Falling back to sequential processing")
+            return await self._fallback_to_sequential(items, config, config_values)
+        else:
+            raise
 
     async def _delayed_worker_start(
         self,

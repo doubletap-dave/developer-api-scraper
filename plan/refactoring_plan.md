@@ -70,26 +70,26 @@ Current line count analysis shows **31 violations** across modules, classes, and
 - ✅ Resolved TypeError: Logger._log() got unexpected keyword argument
 - ✅ All configuration loading now uses structured logging properly
 
-### Phase 3: Class Decomposition (Week 3)
+### Phase 3: Class Decomposition ✅ IN PROGRESS
 
-#### 3.1 Break Down Large Classes (PENDING)
-- **ConfigurationService** (277 lines) → Extract validation logic
-- **ParallelOrchestrator** (226 lines) → Extract worker coordination  
-- **NavigationService** (249 lines) → Extract driver management
-- **ContentExtractor** (213 lines) → Extract content processing
-- **FileOperations** (233 lines) → Extract file handling utilities
+#### 3.1 Major Class Decomposition ✅ PARTIALLY COMPLETED
+- ✅ **StructureParser** (331 → 214 lines) - Extracted HierarchicalStructureParser helper
+- ✅ **ItemProcessor** - Broke down `_process_items_hybrid_mode` (91 → 30 lines) 
+- ⏳ **MenuScanner** (287 lines, +87 over limit) → Extract DOM traversal logic
+- ⏳ **ParallelOrchestrator** (226 lines, +26 over limit) → Extract worker coordination  
+- ⏳ **ContentExtractor** (213 lines, +13 over limit) → Extract content processing
+- ⏳ **MarkdownSanitizer** (224 lines, +24 over limit) → Extract sanitization rules
 
-### Phase 3: Function Decomposition (Week 3)
+#### 3.2 Critical Function Violations ✅ PARTIALLY COMPLETED
+- ✅ **`find_powerflex_expansion_path()`** (84 → 17 lines) - Extracted JavaScript to helper
+- ✅ **`_process_items_hybrid_mode()`** (91 → 30 lines) - Split into focused methods
+- ⏳ **`main.py:main()`** - 103 lines → Extract CLI setup, config loading
+- ⏳ **`setup_logging()`** - 101 lines → Extract formatter setup, handler config
+- ⏳ **`process_items_parallel()`** - 92 lines → Extract worker management
+- ⏳ **`run_scraping_workflow()`** - 76 lines → Extract workflow stages
 
-#### 3.1 Critical Function Violations (60+ lines)
-- **`main.py:main()`** - 103 lines → Extract CLI setup, config loading
-- **`setup_logging()`** - 101 lines → Extract formatter setup, handler config
-- **`_expand_powerflex_path_to_item()`** - 163 lines → Extract path traversal logic
-- **`_expand_menus_enhanced()`** - 114 lines → Extract menu discovery
-- **`_parse_hierarchical_structure()`** - 136 lines → Extract parsing stages
-
-#### 3.2 Moderate Function Violations (60-80 lines)
-- 15 functions need extraction of 20-40 line logical blocks
+#### 3.3 Moderate Function Violations (60-80 lines) ⏳ PENDING
+- 7 remaining functions need extraction of 20-40 line logical blocks
 
 ## Implementation Strategy
 
