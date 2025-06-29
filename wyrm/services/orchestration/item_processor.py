@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 import structlog
 
 from wyrm.models.scrape import SidebarStructure
+from .item_handler import ItemHandler
 
 
 class ItemProcessor:
@@ -22,6 +23,7 @@ class ItemProcessor:
         """
         self.orchestrator = orchestrator
         self.logger = structlog.get_logger(__name__)
+        self.item_handler = ItemHandler()
 
     async def process_items_from_structure(
         self,
@@ -228,24 +230,7 @@ class ItemProcessor:
 
     def _convert_to_sidebar_items(self, items_to_process: List[Dict]) -> List:
         """Convert dict items to SidebarItem objects for parallel processing."""
-        from wyrm.models.scrape import SidebarItem
-        
-        sidebar_items = []
-        for item in items_to_process:
-            if hasattr(item, 'id'):  # Already a SidebarItem
-                sidebar_items.append(item)
-            else:  # Dict item, convert to SidebarItem
-                try:
-                    sidebar_item = SidebarItem(**item)
-                    sidebar_items.append(sidebar_item)
-                except Exception as e:
-                    self.logger.warning(
-                        "Failed to convert item to SidebarItem, skipping",
-                        item=item,
-                        error=str(e)
-                    )
-                    continue
-        return sidebar_items
+        return self.item_handler.convert_to_sidebar_items(items_to_process)
 
     async def _process_items_with_progress(
         self,

@@ -7,6 +7,7 @@ ensuring consistent formatting and removing problematic elements.
 import logging
 import re
 from typing import Dict, List, Optional
+from .markdown_utils import apply_cleanup_patterns, build_cleanup_patterns
 
 
 class MarkdownSanitizer:
@@ -19,7 +20,7 @@ class MarkdownSanitizer:
     
     def __init__(self) -> None:
         """Initialize the MarkdownSanitizer service."""
-        self._cleanup_patterns = self._build_cleanup_patterns()
+        self._cleanup_patterns = build_cleanup_patterns()
     
     def sanitize_content(
         self,
@@ -136,42 +137,6 @@ class MarkdownSanitizer:
         
         return '\n'.join(processed_lines)
     
-    def _build_cleanup_patterns(self) -> List[Dict]:
-        """Build list of regex patterns for content cleanup.
-        
-        Returns:
-            List of pattern dictionaries with 'pattern' and 'replacement'
-        """
-        return [
-            # Remove excessive Unicode whitespace
-            {'pattern': r'[\u200b\u200c\u200d\ufeff]+', 'replacement': ''},
-            
-            # Fix smart quotes
-            {'pattern': r'[\u201c\u201d]', 'replacement': '"'},
-            {'pattern': r'[\u2018\u2019]', 'replacement': "'"},
-            
-            # Fix em dashes and en dashes
-            {'pattern': r'[\u2013\u2014]', 'replacement': '--'},
-            
-            # Remove invisible characters
-            {'pattern': r'[\u00ad\u061c\u1680\u2000-\u200f\u2028-\u202f\u205f-\u206f]', 'replacement': ''},
-            
-            # Fix common HTML entities that slipped through
-            {'pattern': r'&nbsp;', 'replacement': ' '},
-            {'pattern': r'&amp;', 'replacement': '&'},
-            {'pattern': r'&lt;', 'replacement': '<'},
-            {'pattern': r'&gt;', 'replacement': '>'},
-            {'pattern': r'&quot;', 'replacement': '"'},
-            
-            # Clean up broken markdown links
-            {'pattern': r'\[([^\]]+)\]\(\s*\)', 'replacement': r'\1'},
-            
-            # Remove empty emphasis
-            {'pattern': r'\*\*\s*\*\*', 'replacement': ''},
-            {'pattern': r'__\s*__', 'replacement': ''},
-            {'pattern': r'\*\s*\*', 'replacement': ''},
-            {'pattern': r'_\s*_', 'replacement': ''},
-        ]
     
     def _apply_cleanup_patterns(self, content: str) -> str:
         """Apply regex cleanup patterns to content.
@@ -182,14 +147,7 @@ class MarkdownSanitizer:
         Returns:
             Cleaned content
         """
-        for pattern_info in self._cleanup_patterns:
-            content = re.sub(
-                pattern_info['pattern'],
-                pattern_info['replacement'],
-                content,
-                flags=re.MULTILINE
-            )
-        return content
+        return apply_cleanup_patterns(content, self._cleanup_patterns)
     
     def _fix_header_formatting(self, content: str) -> str:
         """Fix common header formatting issues.
