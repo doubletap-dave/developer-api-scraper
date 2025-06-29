@@ -60,6 +60,43 @@ class LoggingService:
         if self._configured:
             return
 
+        # Setup and validation
+        numeric_level, log_paths = self._setup_logging_environment(log_level, log_dir)
+        
+        # Configure basic logging
+        self._configure_basic_logging()
+        
+        # Setup processors
+        processors = self._create_structlog_processors()
+        
+        # Create handlers
+        handlers = self._create_log_handlers(numeric_level, log_paths)
+        
+        # Configure structlog and formatters
+        self._configure_structlog_and_formatters(processors, handlers)
+        
+        # Finalize setup
+        self._finalize_logging_setup(handlers, log_level, log_paths)
+
+    def get_logger(self, name: str) -> structlog.stdlib.BoundLogger:
+        """Get a structured logger instance.
+
+        Args:
+            name: Name for the logger, typically __name__
+
+        Returns:
+            Configured structured logger instance
+
+        Raises:
+            RuntimeError: If logging has not been configured yet
+        """
+        if not self._configured:
+            raise RuntimeError("Logging must be configured before getting loggers")
+
+        return structlog.get_logger(name)
+
+    def _setup_logging_environment(self, log_level: str, log_dir: Optional[str]):
+        """Setup logging environment and validate parameters."""
         # Validate log level
         numeric_level = getattr(logging, log_level.upper(), None)
         if not isinstance(numeric_level, int):
@@ -74,19 +111,25 @@ class LoggingService:
         log_dir_path.mkdir(parents=True, exist_ok=True)
 
         # Define log file paths
-        normal_log_path = log_dir_path / "wyrm.jsonl"
-        trace_log_path = log_dir_path / "wyrm-trace.jsonl"
-        error_log_path = log_dir_path / "wyrm-error.jsonl"
+        log_paths = {
+            'normal': log_dir_path / "wyrm.jsonl",
+            'trace': log_dir_path / "wyrm-trace.jsonl",
+            'error': log_dir_path / "wyrm-error.jsonl"
+        }
 
-        # Configure standard library logging
+        return numeric_level, log_paths
+
+    def _configure_basic_logging(self):
+        """Configure standard library logging."""
         logging.basicConfig(
             format="%(message)s",
             stream=None,  # We'll handle this through structlog
             level=logging.DEBUG,  # Set to DEBUG to capture everything
         )
 
-        # Configure structlog processors
-        processors = [
+    def _create_structlog_processors(self):
+        """Create structlog processors configuration."""
+        return [
             structlog.contextvars.merge_contextvars,
             structlog.processors.add_log_level,
             structlog.processors.StackInfoRenderer(),
@@ -100,13 +143,15 @@ class LoggingService:
             ),
         ]
 
+    def _create_log_handlers(self, numeric_level, log_paths):
+        """Create all logging handlers."""
         # Create console handler with human-readable format
         console_handler = logging.StreamHandler()
         console_handler.setLevel(numeric_level)
 
         # Create normal log handler (INFO and above)
         normal_handler = logging.handlers.RotatingFileHandler(
-            normal_log_path,
+            log_paths['normal'],
             maxBytes=10 * 1024 * 1024,  # 10MB
             backupCount=5
         )
@@ -114,7 +159,7 @@ class LoggingService:
 
         # Create trace log handler (DEBUG and above - everything)
         trace_handler = logging.handlers.RotatingFileHandler(
-            trace_log_path,
+            log_paths['trace'],
             maxBytes=10 * 1024 * 1024,  # 10MB
             backupCount=5
         )
@@ -122,12 +167,21 @@ class LoggingService:
 
         # Create error log handler (ERROR and above only)
         error_handler = logging.handlers.RotatingFileHandler(
-            error_log_path,
+            log_paths['error'],
             maxBytes=10 * 1024 * 1024,  # 10MB
             backupCount=5
         )
         error_handler.setLevel(logging.ERROR)
 
+        return {
+            'console': console_handler,
+            'normal': normal_handler,
+            'trace': trace_handler,
+            'error': error_handler
+        }
+
+    def _configure_structlog_and_formatters(self, processors, handlers):
+        """Configure structlog and apply formatters to handlers."""
         # Configure structlog
         structlog.configure(
             processors=processors + [
@@ -150,18 +204,20 @@ class LoggingService:
         )
 
         # Apply formatters to handlers
-        console_handler.setFormatter(console_formatter)
-        normal_handler.setFormatter(json_formatter)
-        trace_handler.setFormatter(json_formatter)
-        error_handler.setFormatter(json_formatter)
+        handlers['console'].setFormatter(console_formatter)
+        handlers['normal'].setFormatter(json_formatter)
+        handlers['trace'].setFormatter(json_formatter)
+        handlers['error'].setFormatter(json_formatter)
 
+    def _finalize_logging_setup(self, handlers, log_level, log_paths):
+        """Finalize logging setup and log successful configuration."""
         # Get root logger and add handlers
         root_logger = logging.getLogger()
         root_logger.handlers.clear()  # Clear any existing handlers
-        root_logger.addHandler(console_handler)
-        root_logger.addHandler(normal_handler)
-        root_logger.addHandler(trace_handler)
-        root_logger.addHandler(error_handler)
+        root_logger.addHandler(handlers['console'])
+        root_logger.addHandler(handlers['normal'])
+        root_logger.addHandler(handlers['trace'])
+        root_logger.addHandler(handlers['error'])
 
         self._configured = True
 
@@ -170,24 +226,7 @@ class LoggingService:
         logger.info(
             "Logging configured successfully",
             console_level=log_level,
-            normal_log=str(normal_log_path),
-            trace_log=str(trace_log_path),
-            error_log=str(error_log_path),
+            normal_log=str(log_paths['normal']),
+            trace_log=str(log_paths['trace']),
+            error_log=str(log_paths['error']),
         )
-
-    def get_logger(self, name: str) -> structlog.stdlib.BoundLogger:
-        """Get a structured logger instance.
-
-        Args:
-            name: Name for the logger, typically __name__
-
-        Returns:
-            Configured structured logger instance
-
-        Raises:
-            RuntimeError: If logging has not been configured yet
-        """
-        if not self._configured:
-            raise RuntimeError("Logging must be configured before getting loggers")
-
-        return structlog.get_logger(name)

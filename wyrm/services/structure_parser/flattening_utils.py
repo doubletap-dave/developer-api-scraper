@@ -1,6 +1,6 @@
 """Structure flattening utilities for StructureParser.
 
-This module provides utilities for flattening nested structures into 
+This module provides utilities for flattening nested structures into
 processable lists while preserving hierarchy information.
 """
 
@@ -13,7 +13,7 @@ class StructureFlattener:
 
     def __init__(self, markdown_converter):
         """Initialize with markdown converter dependency.
-        
+
         Args:
             markdown_converter: MarkdownConverter instance for validation and formatting
         """
@@ -21,18 +21,18 @@ class StructureFlattener:
 
     def flatten_sidebar_structure(self, structured_data: List[Dict]) -> List[Dict]:
         """Flatten the nested structure into a single list of items, preserving hierarchy info.
-        
+
         Args:
             structured_data: List of header groups with nested children
-            
+
         Returns:
             Flattened list of items with hierarchy information
         """
         flattened_list: List[Dict] = []
-        
+
         for header_group in structured_data:
             header_text = header_group.get("header_text", "Unknown Header")
-            
+
             for top_level_item in header_group.get("children", []):
                 # Process top-level items (can be menus or simple items)
                 self._flatten_recursive(
@@ -43,7 +43,7 @@ class StructureFlattener:
                     parent_menu_text=None,  # Top level items have no parent menu text within the group
                     level=0,
                 )
-                
+
         logging.info(f"Flattened structure contains {len(flattened_list)} processable items.")
         return flattened_list
 
@@ -57,7 +57,7 @@ class StructureFlattener:
         level: int,
     ):
         """Recursive helper to flatten the structure.
-        
+
         Args:
             item: Current item to process
             result_list: List to append flattened items to
@@ -81,18 +81,18 @@ class StructureFlattener:
             )
 
     def _create_flat_entry(
-        self, item: Dict, header: Optional[str], menu: Optional[str], 
+        self, item: Dict, header: Optional[str], menu: Optional[str],
         parent_menu_text: Optional[str], level: int
     ) -> Dict:
         """Create a flattened entry for an item.
-        
+
         Args:
             item: Item to create entry for
             header: Header group
             menu: Menu this item belongs to
             parent_menu_text: Parent menu text
             level: Nesting level
-            
+
         Returns:
             Formatted flat entry dictionary
         """
@@ -105,27 +105,27 @@ class StructureFlattener:
             "parent_menu_text": parent_menu_text,
             "level": level,
         }
-        
+
         return self.markdown_converter.format_item_entry(entry_data)
 
     def _should_process_children(self, item: Dict) -> bool:
         """Check if an item's children should be processed.
-        
+
         Args:
             item: Item to check
-            
+
         Returns:
             True if children should be processed
         """
-        return (item.get("type") == "menu" and 
-                item.get("is_expandable") and 
+        return (item.get("type") == "menu" and
+                item.get("is_expandable") and
                 item.get("children"))
 
     def _process_menu_children(
         self, item: Dict, result_list: List[Dict], header: Optional[str], level: int
     ) -> None:
         """Process children of a menu item.
-        
+
         Args:
             item: Menu item with children
             result_list: List to append children to

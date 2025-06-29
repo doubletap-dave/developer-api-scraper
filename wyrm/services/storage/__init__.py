@@ -181,56 +181,85 @@ class StorageService:
             True if saved successfully, False otherwise
         """
         try:
-            # Build output file path using PathBuilder
-            output_file = self.path_builder.get_output_file_path(
-                header=header,
-                menu=menu,
-                item_text=item_text,
-                base_output_dir=base_output_dir
+            # Build and validate output path
+            output_file = self._build_and_validate_path(
+                header, menu, item_text, base_output_dir
             )
-            
-            # Validate path safety
-            if not self.path_builder.validate_path_safety(output_file):
-                logging.error(f"Path safety validation failed: {output_file}")
+            if not output_file:
                 return False
             
-            # Check if file already exists and overwrite is not enabled
-            if self.file_writer.check_file_exists(output_file) and not overwrite:
-                # Check if we can resume (content matches)
-                if self.file_writer.can_resume_write(output_file, markdown_content):
-                    logging.info(f"File already exists with same content, skipping: {output_file}")
-                    return True
-                else:
-                    logging.info(f"File already exists, skipping: {output_file}")
-                    return True
+            # Check file existence and handle skipping
+            if self._should_skip_existing_file(output_file, markdown_content, overwrite):
+                return True
             
-            # Sanitize content if requested
-            processed_content = markdown_content
-            if sanitize_content:
-                processed_content = self.markdown_sanitizer.sanitize_content(
-                    markdown_content,
-                    remove_empty_lines=True,
-                    fix_headers=True,
-                    clean_tables=True,
-                    normalize_whitespace=True
-                )
-            
-            # Write file atomically using FileWriter
-            success = self.file_writer.write_file_atomic(
-                content=processed_content,
-                output_path=output_file,
-                item_info=f"{header}/{menu}/{item_text}" if header or menu else item_text,
-                verify_checksum=verify_checksum
+            # Process content and write file
+            return self._process_and_write_content(
+                markdown_content, output_file, header, menu, item_text,
+                sanitize_content, verify_checksum
             )
-            
-            if success:
-                logging.info(f"Successfully saved markdown to: {output_file}")
-            
-            return success
             
         except Exception as e:
             logging.error(f"Failed to save markdown content: {e}")
             return False
+
+    def _build_and_validate_path(self, header, menu, item_text, base_output_dir):
+        """Build output path and validate safety."""
+        # Build output file path using PathBuilder
+        output_file = self.path_builder.get_output_file_path(
+            header=header,
+            menu=menu,
+            item_text=item_text,
+            base_output_dir=base_output_dir
+        )
+        
+        # Validate path safety
+        if not self.path_builder.validate_path_safety(output_file):
+            logging.error(f"Path safety validation failed: {output_file}")
+            return None
+        
+        return output_file
+
+    def _should_skip_existing_file(self, output_file, markdown_content, overwrite):
+        """Check if existing file should be skipped."""
+        # Check if file already exists and overwrite is not enabled
+        if self.file_writer.check_file_exists(output_file) and not overwrite:
+            # Check if we can resume (content matches)
+            if self.file_writer.can_resume_write(output_file, markdown_content):
+                logging.info(f"File already exists with same content, skipping: {output_file}")
+                return True
+            else:
+                logging.info(f"File already exists, skipping: {output_file}")
+                return True
+        return False
+
+    def _process_and_write_content(
+        self, markdown_content, output_file, header, menu, item_text,
+        sanitize_content, verify_checksum
+    ):
+        """Process content and write to file."""
+        # Sanitize content if requested
+        processed_content = markdown_content
+        if sanitize_content:
+            processed_content = self.markdown_sanitizer.sanitize_content(
+                markdown_content,
+                remove_empty_lines=True,
+                fix_headers=True,
+                clean_tables=True,
+                normalize_whitespace=True
+            )
+        
+        # Write file atomically using FileWriter
+        success = self.file_writer.write_file_atomic(
+            content=processed_content,
+            output_path=output_file,
+            item_info=f"{header}/{menu}/{item_text}" if header or menu else item_text,
+            verify_checksum=verify_checksum
+        )
+        
+        if success:
+            logging.info(f"Successfully saved markdown to: {output_file}")
+        
+        return success
 
 
 # Maintain backward compatibility by exposing the main class

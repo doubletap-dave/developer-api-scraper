@@ -75,50 +75,11 @@ class WorkflowManager:
             KeyboardInterrupt: Re-raises user interruption after cleanup.
         """
         try:
-            # Load configuration and setup
-            config = self.orchestrator.config_service.load_config(config_path)
-
-            # Merge CLI overrides
-            cli_args = {
-                "headless": headless,
-                "log_level": log_level,
-                "max_expand_attempts": max_expand_attempts,
-                "force_full_expansion": force_full_expansion,
-            }
-            config = self.orchestrator.config_service.merge_cli_overrides(config, cli_args)
-
-            # Handle debug mode
-            if debug:
-                save_structure = True
-                save_html = True
-                self.logger.info(
-                    "Debug mode enabled - forcing structure and HTML saves"
-                )
-
-            # Get configuration values
-            config_values = self.orchestrator.config_service.extract_configuration_values(config)
-
-            # Store config for cleanup
-            self.orchestrator._config = config
-            
-            # Initialize endpoint-aware services
-            self.orchestrator._initialize_endpoint_aware_services(config)
-
-            # Setup directories
-            self.orchestrator.config_service.setup_directories(config_values)
-
-            # Handle sidebar structure loading/parsing
-            sidebar_structure, from_cache = await self.orchestrator.structure_handler.handle_sidebar_structure(
-                config, config_values, save_structure, save_html,
-                structure_filename, html_filename, resume_info, force
+            await self._run_workflow_with_error_handling(
+                config_path, headless, log_level, max_expand_attempts, force_full_expansion,
+                debug, save_structure, save_html, structure_filename, html_filename,
+                resume_info, force, test_item_id, max_items
             )
-
-            # Process items from structure
-            await self.orchestrator.item_processor.process_items_from_structure(
-                sidebar_structure, config_values, force,
-                test_item_id, max_items, resume_info, from_cache
-            )
-
         except KeyboardInterrupt:
             self.logger.warning("User interrupted execution")
             raise
@@ -127,3 +88,83 @@ class WorkflowManager:
             raise
         finally:
             await self.orchestrator._cleanup()
+    
+    def _setup_configuration(self, config_path, headless, log_level, max_expand_attempts, force_full_expansion):
+        """Setup and load configuration with CLI overrides."""
+        # Load configuration
+        config = self.orchestrator.config_service.load_config(config_path)
+
+        # Merge CLI overrides
+        cli_args = {
+            "headless": headless,
+            "log_level": log_level,
+            "max_expand_attempts": max_expand_attempts,
+            "force_full_expansion": force_full_expansion,
+        }
+        config = self.orchestrator.config_service.merge_cli_overrides(config, cli_args)
+        
+        # Get configuration values
+        config_values = self.orchestrator.config_service.extract_configuration_values(config)
+        
+        return config, config_values
+    
+    def _handle_debug_mode(self, debug, save_structure, save_html):
+        """Handle debug mode activation and related settings."""
+        if debug:
+            save_structure = True
+            save_html = True
+            self.logger.info(
+                "Debug mode enabled - forcing structure and HTML saves"
+            )
+        return save_structure, save_html
+    
+    def _initialize_workflow_services(self, config, config_values):
+        """Initialize orchestrator services and setup directories."""
+        # Store config for cleanup
+        self.orchestrator._config = config
+        
+        # Initialize endpoint-aware services
+        self.orchestrator._initialize_endpoint_aware_services(config)
+
+        # Setup directories
+        self.orchestrator.config_service.setup_directories(config_values)
+    
+    async def _execute_workflow(self, config, config_values, save_structure, save_html,
+                               structure_filename, html_filename, resume_info, force,
+                               test_item_id, max_items):
+        """Execute the main workflow of structure handling and item processing."""
+        # Handle sidebar structure loading/parsing
+        sidebar_structure, from_cache = await self.orchestrator.structure_handler.handle_sidebar_structure(
+            config, config_values, save_structure, save_html,
+            structure_filename, html_filename, resume_info, force
+        )
+
+        # Process items from structure
+        await self.orchestrator.item_processor.process_items_from_structure(
+            sidebar_structure, config_values, force,
+            test_item_id, max_items, resume_info, from_cache
+        )
+    
+    async def _run_workflow_with_error_handling(
+        self, config_path, headless, log_level, max_expand_attempts, force_full_expansion,
+        debug, save_structure, save_html, structure_filename, html_filename,
+        resume_info, force, test_item_id, max_items
+    ):
+        """Run workflow with proper setup and coordination."""
+        # Setup configuration
+        config, config_values = self._setup_configuration(
+            config_path, headless, log_level, max_expand_attempts, force_full_expansion
+        )
+        
+        # Handle debug mode
+        save_structure, save_html = self._handle_debug_mode(debug, save_structure, save_html)
+        
+        # Initialize services and directories
+        self._initialize_workflow_services(config, config_values)
+        
+        # Execute main workflow
+        await self._execute_workflow(
+            config, config_values, save_structure, save_html,
+            structure_filename, html_filename, resume_info, force,
+            test_item_id, max_items
+        )

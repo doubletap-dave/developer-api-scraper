@@ -113,17 +113,17 @@ class StructureParser:
             # Assign items to the found headers, matching their positions
             for header in headers_found:
                 position = header["position"]
-                
+
                 # Gather all items before this header's position
                 pertinent_items = [item["data"] for item in items_before_header if item["position"] < position]
-                
+
                 # Assign them to the current header
                 header["children"].extend(pertinent_items)
                 structure_by_header.append(header)
-                
+
                 # Remove those items so they aren't reassigned
                 items_before_header = [item for item in items_before_header if item["position"] >= position]
-            
+
             # If there are leftover items, assign them to the last header found
             if items_before_header and headers_found:
                 last_header = headers_found[-1]

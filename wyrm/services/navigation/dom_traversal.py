@@ -12,6 +12,9 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 
+from .expansion_path_finder import ExpansionPathFinder
+from .standalone_page_detector import StandalonePageDetector
+
 
 class DOMTraversal:
     """Handles DOM traversal and element analysis for menu operations."""
@@ -23,6 +26,8 @@ class DOMTraversal:
             driver: WebDriver instance
         """
         self.driver = driver
+        self.expansion_path_finder = ExpansionPathFinder(driver)
+        self.standalone_page_detector = StandalonePageDetector(driver)
 
     def find_expandable_sections(self) -> List[Dict[str, Any]]:
         """Find all expandable menu sections in the PowerFlex structure.
@@ -31,7 +36,7 @@ class DOMTraversal:
             List of dictionaries containing expandable section information
         """
         expandable_sections = []
-        
+
         try:
             # Find all expandable sections using CSS selector
             sections = self.driver.find_elements(
@@ -96,7 +101,7 @@ class DOMTraversal:
             return {}
 
         safe_menu_text = menu_text.replace('"', "'").replace("'", '"')
-        
+
         # XPath to find the LI containing the specific text
         menu_li_xpath = (
             f"//li[contains(@class, 'toc-item') and "
@@ -113,7 +118,7 @@ class DOMTraversal:
 
             # Check if already expanded
             is_expanded = self._check_menu_expansion_state(expanded_icon_xpath)
-            
+
             # Find collapsed icon if not expanded
             collapsed_icon = None
             if not is_expanded:
@@ -160,57 +165,7 @@ class DOMTraversal:
         Returns:
             List of potential containers that might contain standalone pages
         """
-        try:
-            logging.info("Looking for standalone pages...")
-
-            # Look for items that might be standalone pages but are currently hidden
-            standalone_patterns = self._get_standalone_patterns()
-            
-            # Check if any collapsed sections might contain these pages
-            all_text_elements = self.driver.find_elements(
-                "css selector",
-                "li.toc-item-highlight div, li.toc-item-highlight span"
-            )
-
-            potential_containers = self._find_potential_containers(
-                all_text_elements, standalone_patterns
-            )
-
-            return list(potential_containers)
-
-        except Exception as e:
-            logging.debug(f"Error revealing standalone pages: {e}")
-            return []
-
-    def _get_standalone_patterns(self) -> List[str]:
-        """Get patterns for standalone page detection."""
-        return [
-            "Introduction", "Getting Started", "Overview", "Responses",
-            "Authentication", "Authorization", "Error Codes", "Examples",
-            "Volume Management", "Storage", "Host", "Protection", "Replication",
-            "System", "User Management", "Monitoring", "Configuration",
-            "API Reference", "Reference", "Guide", "Tutorial"
-        ]
-
-    def _find_potential_containers(self, all_text_elements, standalone_patterns) -> Set:
-        """Find potential containers for standalone pages."""
-        potential_containers = set()
-        for element in all_text_elements:
-            try:
-                text = element.text.strip()
-                for pattern in standalone_patterns:
-                    if pattern.lower() in text.lower():
-                        # Find the parent LI that might need expansion
-                        parent_li = element.find_element(
-                            "xpath", 
-                            "ancestor::li[contains(@class, 'toc-item-highlight')][1]"
-                        )
-                        potential_containers.add(parent_li)
-                        logging.debug(f"Found potential standalone page container: {text}")
-                        break
-            except Exception:
-                continue
-        return potential_containers
+        return self.standalone_page_detector.reveal_standalone_pages()
 
     def find_expansion_path(self, item_id: str, item_text: str) -> List[str]:
         """Find the full chain of ancestor menus for a deeply nested item.
@@ -222,71 +177,4 @@ class DOMTraversal:
         Returns:
             List of ancestor menu texts in order from top-level to immediate parent
         """
-        try:
-            js_script = self._build_ancestor_traversal_script()
-            ancestor_menus = self.driver.execute_script(js_script, item_id, item_text)
-            
-            self._log_expansion_path_results(item_text, ancestor_menus)
-            return ancestor_menus or []
-            
-        except Exception as e:
-            logging.warning(f"Error discovering ancestor menus for '{item_text}': {e}")
-            return []
-
-    def _build_ancestor_traversal_script(self) -> str:
-        """Build JavaScript for traversing DOM to find ancestor menus."""
-        return """
-            function findAncestorMenus(targetId, targetText) {
-                let targetElement = null;
-
-                // Find target element by ID first, then by text content
-                if (targetId) {
-                    targetElement = document.getElementById(targetId);
-                }
-
-                if (!targetElement && targetText) {
-                    // Find by text content in LI elements
-                    const lis = document.querySelectorAll('li');
-                    for (let li of lis) {
-                        if (li.textContent && li.textContent.includes(targetText)) {
-                            targetElement = li;
-                            break;
-                        }
-                    }
-                }
-
-                if (!targetElement) {
-                    return [];
-                }
-
-                const ancestors = [];
-                let current = targetElement.parentElement;
-
-                while (current && current !== document.body) {
-                    // Look for ancestor LI elements that might be menus
-                    if (current.tagName === 'LI' && current.classList.contains('toc-item')) {
-                        // Check if this LI has an expander icon (indicating it's a menu)
-                        const expanderIcon = current.querySelector('i[class*="chevron"]');
-                        if (expanderIcon) {
-                            // Find the menu text
-                            const menuTextDiv = current.querySelector('div:first-child');
-                            if (menuTextDiv && menuTextDiv.textContent) {
-                                ancestors.unshift(menuTextDiv.textContent.trim());
-                            }
-                        }
-                    }
-                    current = current.parentElement;
-                }
-
-                return ancestors;
-            }
-
-            return findAncestorMenus(arguments[0], arguments[1]);
-        """
-
-    def _log_expansion_path_results(self, item_text: str, ancestor_menus: List[str]) -> None:
-        """Log the results of expansion path discovery."""
-        if ancestor_menus:
-            logging.debug(f"Discovered ancestor menus for '{item_text}': {ancestor_menus}")
-        else:
-            logging.debug(f"No ancestor menus found for '{item_text}' in DOM")
+        return self.expansion_path_finder.find_expansion_path(item_id, item_text)
