@@ -55,8 +55,6 @@ class StorageService:
             base_output_dir=base_output_dir
         )
 
-
-
     async def save_content_for_item(
         self,
         item,
@@ -132,7 +130,8 @@ class StorageService:
         structure_filepath: Path
     ) -> None:
         """Save sidebar structure to output directory."""
-        self.resume_manager.save_structure_to_output(sidebar_structure, structure_filepath)
+        self.resume_manager.save_structure_to_output(
+            sidebar_structure, structure_filepath)
 
     def display_resume_info(
         self,

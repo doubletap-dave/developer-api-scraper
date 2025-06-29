@@ -90,7 +90,8 @@ class ContentNavigator:
 
             except Exception:
                 # Fallback: try clicking the li element directly
-                logging.debug(f"No clickable anchor found, trying li element directly: {item_id}")
+                logging.debug(
+                    f"No clickable anchor found, trying li element directly: {item_id}")
 
                 # Wait for the li element to be clickable
                 WebDriverWait(self.driver, 5).until(
@@ -102,23 +103,27 @@ class ContentNavigator:
                 logging.debug(f"Successfully clicked li element: {item_id}")
 
         except ElementClickInterceptedException:
-            logging.warning(f"Click intercepted for {item_id}, trying JavaScript click...")
+            logging.warning(
+                f"Click intercepted for {item_id}, trying JavaScript click...")
             try:
                 li_element = WebDriverWait(self.driver, timeout).until(
                     EC.presence_of_element_located((By.ID, item_id))
                 )
-                self.driver.execute_script("arguments[0].scrollIntoView(true);", li_element)
+                self.driver.execute_script(
+                    "arguments[0].scrollIntoView(true);", li_element)
                 await asyncio.sleep(0.2)
 
                 # Try JavaScript click on anchor first
                 try:
                     anchor_element = li_element.find_element(By.TAG_NAME, "a")
                     self.driver.execute_script("arguments[0].click();", anchor_element)
-                    logging.debug(f"Successfully clicked anchor using JavaScript: {item_id}")
+                    logging.debug(
+                        f"Successfully clicked anchor using JavaScript: {item_id}")
                 except Exception:
                     # Fallback to JavaScript click on li
                     self.driver.execute_script("arguments[0].click();", li_element)
-                    logging.debug(f"Successfully clicked li using JavaScript: {item_id}")
+                    logging.debug(
+                        f"Successfully clicked li using JavaScript: {item_id}")
 
             except Exception as js_error:
                 logging.error(f"JavaScript click also failed for {item_id}: {js_error}")
@@ -142,7 +147,8 @@ class ContentNavigator:
             """Custom condition to check if content is ready."""
             try:
                 # Check if content pane exists and has content
-                content_elements = driver.find_elements(*self.selectors.CONTENT_PANE_INNER_HTML_TARGET)
+                content_elements = driver.find_elements(
+                    *self.selectors.CONTENT_PANE_INNER_HTML_TARGET)
                 if not content_elements:
                     return False
 

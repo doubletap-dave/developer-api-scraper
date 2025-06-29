@@ -204,12 +204,18 @@ class ConfigurationService:
                     'post_click_noheadless',
                     1.0),
                 "max_expand_attempts": config.behavior.max_expand_attempts,
+                "force_full_expansion": config.behavior.force_full_expansion,
                 "default_html_filename": (
                     config.debug_settings.save_html_filename
                 ),
                 "default_structure_filename": (
                     config.debug_settings.save_structure_filename
                 ),
+                # Concurrency settings
+                "max_concurrent_tasks": config.concurrency.max_concurrent_tasks,
+                "concurrency_enabled": config.concurrency.enabled,
+                "task_start_delay": config.concurrency.task_start_delay,
+                "max_parallel_retries": config.concurrency.max_parallel_retries,
             }
 
             self.logger.info(
@@ -271,6 +277,17 @@ class ConfigurationService:
                 "CLI override",
                 setting="max_expand_attempts",
                 value=cli_args["max_expand_attempts"]
+            )
+
+        # Handle force full expansion override
+        if cli_args.get("force_full_expansion") is not None:
+            config_dict["behavior"]["force_full_expansion"] = (
+                cli_args["force_full_expansion"]
+            )
+            self.logger.info(
+                "CLI override",
+                setting="force_full_expansion",
+                value=cli_args["force_full_expansion"]
             )
 
         # Create new AppConfig with merged values

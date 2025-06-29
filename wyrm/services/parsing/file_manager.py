@@ -12,26 +12,27 @@ from typing import Dict, List, Optional
 class FileManager:
     """Handles file I/O operations for parsing service."""
 
-    def load_existing_structure(self, structure_filepath: Path) -> Optional[Dict]:
+    def load_existing_structure(self, structure_filepath: Path) -> tuple[Optional[Dict], bool]:
         """Load existing sidebar structure from file.
 
         Args:
             structure_filepath: Path to existing structure file
 
         Returns:
-            Loaded structure dictionary or None if loading fails
+            Tuple of (loaded structure dictionary or None if loading fails, from_cache flag)
         """
         try:
             if structure_filepath.exists():
                 logging.info(f"Loading existing structure from: {structure_filepath}")
                 with open(structure_filepath, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    structure = json.load(f)
+                    return structure, True  # from_cache = True
             else:
                 logging.debug(f"Structure file does not exist: {structure_filepath}")
-                return None
+                return None, False  # from_cache = False
         except Exception as e:
             logging.error(f"Failed to load existing structure: {e}")
-            return None
+            return None, False  # from_cache = False
 
     def save_structure_to_file(self, structure_map: List[Dict], filepath: Path) -> None:
         """Save the structured sidebar map to a JSON file.

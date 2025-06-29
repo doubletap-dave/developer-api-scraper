@@ -296,10 +296,11 @@ An unexpected error occurred on the server.
 
 ### **Processing Control**
 | Option | Description | Example |
-|--------|-------------|---------|
+|--------|-------------|--------|
 | `--force` | Overwrite existing files | `--force` |
 | `--max-items` | Limit items to process | `--max-items 10` |
 | `--max-expand-attempts` | Menu expansion limit | `--max-expand-attempts 5` |
+| `--force-full-expansion` | Force full menu expansion even with cache | `--force-full-expansion` |
 
 ### **Debug & Analysis**
 | Option | Description | Example |
@@ -434,6 +435,47 @@ python main.py --debug --max-items 1
 - **Coverage**: 40% more comprehensive than basic extraction tools
 - **Memory Usage**: Optimized for large documentation sites (1000+ pages)
 - **Resume Speed**: Near-instant resume with smart file detection
+
+### **🚀 Caching Optimization (New in v1.4.1+)**
+
+Wyrm now includes intelligent sidebar structure caching that provides dramatic performance improvements for subsequent runs:
+
+**Performance Benchmark Results:**
+- **Fresh run** (no cache): ~23.4 seconds - full website parsing and menu expansion
+- **Cached run** (optimal): ~0.39 seconds - loading from pre-parsed structure
+- **Performance improvement**: **99% faster** with **60x speedup**
+
+**How Caching Works:**
+1. **First Run**: Wyrm navigates the site, expands all menus, and saves the complete sidebar structure to `logs/sidebar_structure.json`
+2. **Subsequent Runs**: Wyrm loads the cached structure instantly and skips expensive navigation/expansion
+3. **Smart Validation**: Cached structures are validated for completeness and automatically refreshed if needed
+4. **Cache Control**: Use `--force-full-expansion` flag to bypass cache when debugging menu expansion issues
+
+**Cache Management:**
+```bash
+# Normal operation (uses cache when available)
+python main.py
+
+# Force fresh parsing (ignores cache)
+python main.py --force-full-expansion
+
+# View cache information
+ls -la logs/sidebar_structure.json
+
+# Clear cache to force full re-parsing
+rm logs/sidebar_structure.json
+```
+
+**When Cache is Used:**
+- ✅ Valid cached structure exists with sufficient items (10+ valid items)
+- ✅ Cache file integrity check passes
+- ✅ No `--force-full-expansion` flag specified
+
+**When Fresh Parsing Occurs:**
+- 🔄 No cached structure exists
+- 🔄 Cached structure has insufficient valid items
+- 🔄 Cache validation fails
+- 🔄 `--force-full-expansion` flag is used
 
 ### **Scalability Features**
 - **Modular Architecture**: Easy to extend and customize

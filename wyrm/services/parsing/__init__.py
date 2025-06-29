@@ -40,7 +40,8 @@ class ParsingService:
         structured_data = self.structure_parser.map_sidebar_structure(sidebar_html)
 
         # Flatten the structure for processing
-        flattened_items_dict = self.structure_parser.flatten_sidebar_structure(structured_data)
+        flattened_items_dict = self.structure_parser.flatten_sidebar_structure(
+            structured_data)
 
         # Convert dict items to SidebarItem models
         sidebar_items = []
@@ -118,8 +119,12 @@ class ParsingService:
         return self.item_validator.filter_items_for_processing(valid_items, max_items, test_item_id)
 
     # Delegate to file_manager
-    def load_existing_structure(self, structure_filepath: Path) -> Optional[Dict]:
-        """Load existing sidebar structure from file."""
+    def load_existing_structure(self, structure_filepath: Path) -> tuple[Optional[Dict], bool]:
+        """Load existing sidebar structure from file.
+
+        Returns:
+            Tuple of (loaded structure dictionary or None if loading fails, from_cache flag)
+        """
         return self.file_manager.load_existing_structure(structure_filepath)
 
     def save_structure_to_file(self, structure_map: List[Dict], filepath: Path) -> None:
