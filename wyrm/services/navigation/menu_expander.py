@@ -35,6 +35,10 @@ class MenuExpander:
     async def expand_menu_for_item(self, item, config_values: Dict) -> None:
         """Handle menu expansion and item clicking for a specific item.
 
+        Ensures that all ancestor menus in the path to the target item are expanded,
+        including deeply nested hierarchies. This provides robust navigation when global
+        expansion is skipped by discovering and expanding the full ancestor chain.
+
         Args:
             item: Item dictionary containing menu and ID information
             config_values: Configuration values for timeouts and delays
@@ -42,33 +46,39 @@ class MenuExpander:
         # Handle both SidebarItem models and dict items for backward compatibility
         if hasattr(item, 'id'):
             item_id = item.id
+            item_text = item.text
             menu_text = item.menu
             parent_menu_text = item.parent_menu_text
+            level = getattr(item, 'level', 0)
         else:
             item_id = item.get("id")
+            item_text = item.get("text", "Unknown")
             menu_text = item.get("menu")
             parent_menu_text = item.get("parent_menu_text")
+            level = item.get("level", 0)
 
-        # Smart menu expansion
-        if menu_text:
-            logging.debug(f"Finding and expanding menu '{menu_text}' for node '{item_id}'")
-            try:
-                success = await self._expand_menu_containing_node(
-                    menu_text,
-                    item_id,
-                    timeout=config_values["navigation_timeout"],
-                    expand_delay=config_values["expand_delay"],
-                )
-                if success:
-                    logging.debug(f"Successfully expanded '{menu_text}' menu")
-                else:
-                    logging.warning(f"Could not find node '{item_id}' in '{menu_text}' menu")
-            except Exception as expand_err:
-                logging.warning(f"Error during menu expansion for '{menu_text}': {expand_err}")
+        logging.debug(f"Expanding menus for item '{item_text}' (level {level})")
 
-        # Legacy fallback
-        if parent_menu_text and parent_menu_text != menu_text:
-            logging.debug(f"Legacy fallback: expanding parent menu '{parent_menu_text}'")
+        # For items at level > 1, we need to discover and expand the full ancestor chain
+        # This handles deeply nested menu structures robustly
+        if level > 1:
+            ancestor_menus = await self._discover_ancestor_menus(item_text, item_id)
+            for ancestor_menu in ancestor_menus:
+                try:
+                    logging.debug(f"Expanding ancestor menu: '{ancestor_menu}'")
+                    await self._expand_specific_menu(
+                        ancestor_menu,
+                        timeout=config_values["navigation_timeout"],
+                        expand_delay=config_values["expand_delay"],
+                    )
+                    await asyncio.sleep(0.3)
+                except Exception as expand_err:
+                    logging.warning(
+                        f"Could not expand ancestor menu '{ancestor_menu}': {expand_err}")
+
+        # Fallback: expand parent menu first if different from direct menu
+        elif parent_menu_text and parent_menu_text != menu_text:
+            logging.debug(f"Expanding parent menu '{parent_menu_text}' first")
             try:
                 await self._expand_specific_menu(
                     parent_menu_text,
@@ -77,7 +87,118 @@ class MenuExpander:
                 )
                 await asyncio.sleep(0.3)
             except Exception as expand_err:
-                logging.warning(f"Could not expand parent menu '{parent_menu_text}': {expand_err}")
+                logging.warning(
+                    f"Could not expand ancestor menu '{parent_menu_text}': {expand_err}")
+
+        # Smart menu expansion for the direct parent menu
+        if menu_text:
+            logging.debug(
+                f"Finding and expanding direct menu '{menu_text}' for node '{item_id}'")
+            try:
+                success = await self._expand_menu_containing_node(
+                    menu_text,
+                    item_id,
+                    timeout=config_values["navigation_timeout"],
+                    expand_delay=config_values["expand_delay"],
+                )
+                if success:
+                    logging.debug(
+                        f"Successfully expanded '{menu_text}' menu and verified item visibility")
+                else:
+                    logging.warning(
+                        f"Could not find node '{item_id}' in '{menu_text}' menu after expansion")
+                    # Fallback: try expanding without verification
+                    await self._expand_specific_menu(
+                        menu_text,
+                        timeout=config_values["navigation_timeout"],
+                        expand_delay=config_values["expand_delay"],
+                    )
+            except Exception as expand_err:
+                logging.warning(
+                    f"Error during menu expansion for '{menu_text}': {expand_err}")
+
+    async def _discover_ancestor_menus(self, item_text: str, item_id: str) -> list:
+        """Discover the full chain of ancestor menus for a deeply nested item.
+
+        This method uses DOM traversal to find all ancestor menus that need to be
+        expanded to make the target item visible. It's particularly useful when
+        global expansion is skipped and we need to expand only the necessary path.
+
+        Args:
+            item_text: Text of the target item
+            item_id: ID of the target item
+
+        Returns:
+            List of ancestor menu texts in order from top-level to immediate parent
+        """
+        ancestor_menus = []
+
+        try:
+            # Try to find the item in the DOM (it might be present but not visible)
+            # We'll traverse up the DOM tree to find all ancestor menu containers
+
+            # JavaScript to traverse up and find ancestor menus
+            js_script = """
+            function findAncestorMenus(targetId, targetText) {
+                let targetElement = null;
+
+                // Find target element by ID first, then by text content
+                if (targetId) {
+                    targetElement = document.getElementById(targetId);
+                }
+
+                if (!targetElement && targetText) {
+                    // Find by text content in LI elements
+                    const lis = document.querySelectorAll('li');
+                    for (let li of lis) {
+                        if (li.textContent && li.textContent.includes(targetText)) {
+                            targetElement = li;
+                            break;
+                        }
+                    }
+                }
+
+                if (!targetElement) {
+                    return [];
+                }
+
+                const ancestors = [];
+                let current = targetElement.parentElement;
+
+                while (current && current !== document.body) {
+                    // Look for ancestor LI elements that might be menus
+                    if (current.tagName === 'LI' && current.classList.contains('toc-item')) {
+                        // Check if this LI has an expander icon (indicating it's a menu)
+                        const expanderIcon = current.querySelector('i[class*="chevron"]');
+                        if (expanderIcon) {
+                            // Find the menu text
+                            const menuTextDiv = current.querySelector('div:first-child');
+                            if (menuTextDiv && menuTextDiv.textContent) {
+                                ancestors.unshift(menuTextDiv.textContent.trim());
+                            }
+                        }
+                    }
+                    current = current.parentElement;
+                }
+
+                return ancestors;
+            }
+
+            return findAncestorMenus(arguments[0], arguments[1]);
+            """
+
+            ancestor_menus = self.driver.execute_script(js_script, item_id, item_text)
+
+            if ancestor_menus:
+                logging.debug(
+                    f"Discovered ancestor menus for '{item_text}': {ancestor_menus}")
+            else:
+                logging.debug(f"No ancestor menus found for '{item_text}' in DOM")
+
+        except Exception as e:
+            logging.warning(f"Error discovering ancestor menus for '{item_text}': {e}")
+
+        return ancestor_menus or []
 
     async def _expand_specific_menu(
         self, menu_text: str, timeout: int = 10, expand_delay: float = 0.2
@@ -102,10 +223,11 @@ class MenuExpander:
         try:
             # Find the menu LI element
             logging.debug("Locating menu LI element using XPath...")
-            menu_li = WebDriverWait(self.driver, 5).until(
+            WebDriverWait(self.driver, 5).until(
                 EC.presence_of_element_located((By.XPATH, menu_li_xpath))
             )
-            logging.debug(f"Found menu LI for '{safe_menu_text}'. Checking expansion state...")
+            logging.debug(
+                f"Found menu LI for '{safe_menu_text}'. Checking expansion state...")
 
             # Check if already expanded
             try:
@@ -116,7 +238,8 @@ class MenuExpander:
                     logging.debug(f"Menu '{safe_menu_text}' already expanded.")
                     return
             except TimeoutException:
-                logging.debug(f"Expanded icon not found for '{safe_menu_text}'. Assuming collapsed.")
+                logging.debug(
+                    f"Expanded icon not found for '{safe_menu_text}'. Assuming collapsed.")
 
             # Find and click collapsed icon
             collapsed_icon = WebDriverWait(self.driver, 5).until(
@@ -124,7 +247,8 @@ class MenuExpander:
             )
 
             # Menu expansion happening - logging reduced for cleaner progress display
-            self.driver.execute_script("arguments[0].scrollIntoView(false);", collapsed_icon)
+            self.driver.execute_script(
+                "arguments[0].scrollIntoView(false);", collapsed_icon)
             await asyncio.sleep(0.1)
             collapsed_icon.click()
 
@@ -134,27 +258,32 @@ class MenuExpander:
             clicked_successfully = True
 
         except ElementClickInterceptedException:
-            logging.warning(f"Click intercepted for menu '{safe_menu_text}'. Retrying...")
+            logging.warning(
+                f"Click intercepted for menu '{safe_menu_text}'. Retrying...")
             await self._wait_for_loader_to_disappear(timeout=5)
             try:
                 collapsed_icon = WebDriverWait(self.driver, 5).until(
                     EC.element_to_be_clickable((By.XPATH, collapsed_icon_xpath))
                 )
-                self.driver.execute_script("arguments[0].scrollIntoView(false);", collapsed_icon)
+                self.driver.execute_script(
+                    "arguments[0].scrollIntoView(false);", collapsed_icon)
                 await asyncio.sleep(0.1)
                 self.driver.execute_script("arguments[0].click();", collapsed_icon)
 
-                logging.info(f"Successfully clicked expander for '{safe_menu_text}' after interception.")
+                logging.info(
+                    f"Successfully clicked expander for '{safe_menu_text}' after interception.")
                 clicked_successfully = True
                 await self._wait_for_loader_to_disappear(timeout=timeout)
                 await asyncio.sleep(expand_delay)
             except Exception as retry_e:
-                logging.error(f"Failed to expand menu '{safe_menu_text}' even after retry: {retry_e}")
+                logging.error(
+                    f"Failed to expand menu '{safe_menu_text}' even after retry: {retry_e}")
 
         except (TimeoutException, NoSuchElementException) as e:
             logging.error(f"Could not find menu elements for '{safe_menu_text}': {e}")
         except Exception as e:
-            logging.exception(f"Unexpected error expanding menu '{safe_menu_text}': {e}")
+            logging.exception(
+                f"Unexpected error expanding menu '{safe_menu_text}': {e}")
 
         # Verify expansion
         if clicked_successfully:
@@ -164,7 +293,8 @@ class MenuExpander:
                 )
                 logging.debug(f"Verified expansion of menu '{safe_menu_text}'")
             except TimeoutException:
-                logging.warning(f"Could not verify expansion of menu '{safe_menu_text}'")
+                logging.warning(
+                    f"Could not verify expansion of menu '{safe_menu_text}'")
 
     async def _expand_menu_containing_node(
         self, menu_text: str, target_node_id: str, timeout: int = 10, expand_delay: float = 0.2
@@ -216,7 +346,8 @@ class MenuExpander:
                         continue
 
                     # Scroll into view and click
-                    self.driver.execute_script("arguments[0].scrollIntoView(false);", icon)
+                    self.driver.execute_script(
+                        "arguments[0].scrollIntoView(false);", icon)
                     await asyncio.sleep(0.1)
 
                     try:
@@ -253,6 +384,7 @@ class MenuExpander:
             )
             logging.debug("Loader overlay is not visible.")
         except TimeoutException:
-            logging.warning(f"Loader overlay did not disappear within {timeout} seconds.")
+            logging.warning(
+                f"Loader overlay did not disappear within {timeout} seconds.")
         except Exception as e:
             logging.exception(f"Unexpected error waiting for loader to disappear: {e}")

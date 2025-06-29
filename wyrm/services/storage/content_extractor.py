@@ -14,7 +14,6 @@ from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.remote.webdriver import WebDriver
 
 from ..selectors_service import SelectorsService
-from wyrm.models.scrape import ScrapedContent
 
 
 class ContentExtractor:
@@ -49,11 +48,14 @@ class ContentExtractor:
         Returns:
             Complete Markdown content or None if extraction fails
         """
-        logging.debug("Attempting to extract and convert content with enhanced extractor...")
+        logging.debug(
+            "Attempting to extract and convert content with enhanced extractor...")
         try:
             # Find the main content pane first
-            content_pane = driver.find_element(*self.selectors.CONTENT_PANE_INNER_HTML_TARGET)
-            logging.debug(f"Found content pane element: {self.selectors.CONTENT_PANE_INNER_HTML_TARGET}")
+            content_pane = driver.find_element(
+                *self.selectors.CONTENT_PANE_INNER_HTML_TARGET)
+            logging.debug(
+                f"Found content pane element: {self.selectors.CONTENT_PANE_INNER_HTML_TARGET}")
 
             # Get the full HTML content of the documentation div
             html_content = content_pane.get_attribute("innerHTML")
@@ -68,7 +70,8 @@ class ContentExtractor:
             # Strategy 1: Handle API endpoint documentation (app-api-doc-endpoint)
             endpoint_element = soup.find("app-api-doc-endpoint")
             if endpoint_element:
-                logging.debug("Found app-api-doc-endpoint structure - extracting API documentation")
+                logging.debug(
+                    "Found app-api-doc-endpoint structure - extracting API documentation")
                 return await self._extract_api_endpoint_content(endpoint_element, md_opts, driver)
 
             # Strategy 2: Handle standalone model/schema documentation (app-api-doc-model)
@@ -80,18 +83,22 @@ class ContentExtractor:
             # Strategy 3: Handle general markdown content
             markdown_elements = soup.find_all("markdown")
             if markdown_elements:
-                logging.debug(f"Found {len(markdown_elements)} markdown elements - extracting general content")
+                logging.debug(
+                    f"Found {len(markdown_elements)} markdown elements - extracting general content")
                 return await self._extract_markdown_content(markdown_elements, md_opts)
 
             # Strategy 4: Fallback - extract all text content
-            logging.warning("No recognized content structure found, attempting fallback extraction")
+            logging.warning(
+                "No recognized content structure found, attempting fallback extraction")
             return await self._extract_fallback_content(soup, md_opts)
 
         except NoSuchElementException:
-            logging.error(f"Content pane element ({self.selectors.CONTENT_PANE_INNER_HTML_TARGET}) not found.")
+            logging.error(
+                f"Content pane element ({self.selectors.CONTENT_PANE_INNER_HTML_TARGET}) not found.")
             return None
         except Exception as e:
-            logging.exception(f"An unexpected error occurred during content extraction/conversion: {e}")
+            logging.exception(
+                f"An unexpected error occurred during content extraction/conversion: {e}")
             return None
 
     async def _extract_api_endpoint_content(self, endpoint_element, md_opts, driver: WebDriver) -> str:
@@ -109,7 +116,8 @@ class ContentExtractor:
             # Build the header line
             header_parts = []
             if method_element:
-                method_span = method_element.find("span", class_=lambda x: x and "http-method" in x)
+                method_span = method_element.find(
+                    "span", class_=lambda x: x and "http-method" in x)
                 if method_span:
                     method = method_span.get_text(strip=True)
                     header_parts.append(method)
@@ -207,7 +215,8 @@ class ContentExtractor:
                         markdown_pieces.append(tab_content)
 
                 except Exception as e:
-                    logging.warning(f"Failed to extract content for response tab {status_code}: {e}")
+                    logging.warning(
+                        f"Failed to extract content for response tab {status_code}: {e}")
                     continue
         else:
             # Single response: extract directly
@@ -257,7 +266,8 @@ class ContentExtractor:
 
         for markdown_element in markdown_elements:
             # Get the inner HTML of the markdown element
-            inner_html = markdown_element.decode_contents() if hasattr(markdown_element, 'decode_contents') else str(markdown_element)
+            inner_html = markdown_element.decode_contents() if hasattr(
+                markdown_element, 'decode_contents') else str(markdown_element)
 
             if inner_html.strip():
                 # Parse the inner content with BeautifulSoup
@@ -278,8 +288,8 @@ class ContentExtractor:
         """Fallback content extraction when no specific structure is found."""
         # Try to find any meaningful content containers
         content_containers = soup.find_all(['div', 'section', 'article'],
-                                         class_=lambda x: x and any(keyword in x.lower()
-                                         for keyword in ['content', 'doc', 'api', 'main']))
+                                           class_=lambda x: x and any(keyword in x.lower()
+                                                                      for keyword in ['content', 'doc', 'api', 'main']))
 
         if not content_containers:
             # If no specific containers found, try to get all text content

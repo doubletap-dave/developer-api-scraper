@@ -54,7 +54,8 @@ class StructureParser:
                 # 1a. Check for Header LI within app-item
                 header_li = app_item.select_one(self.selectors.SIDEBAR_HEADER_LI[1])
                 if header_li:
-                    header_link = header_li.select_one(self.selectors.HEADER_TEXT_ANCHOR[1])
+                    header_link = header_li.select_one(
+                        self.selectors.HEADER_TEXT_ANCHOR[1])
                     header_text = "Unknown Header"
                     if header_link:
                         header_text = header_link.get_text(strip=True)
@@ -65,11 +66,13 @@ class StructureParser:
 
                 # If we haven't found a header yet, skip
                 if not current_header_group:
-                    logging.warning("Found sidebar item before finding the first header. Skipping.")
+                    logging.warning(
+                        "Found sidebar item before finding the first header. Skipping.")
                     continue
 
                 # 1b. Check for Clickable LI (Item or Menu) within app-item
-                clickable_li = app_item.select_one(self.selectors.SIDEBAR_CLICKABLE_LI[1])
+                clickable_li = app_item.select_one(
+                    self.selectors.SIDEBAR_CLICKABLE_LI[1])
                 if clickable_li:
                     item_id = clickable_li.get("id")
                     item_type = "item"  # Default
@@ -97,27 +100,34 @@ class StructureParser:
                         # Check for children in the *next* sibling UL
                         next_sibling = app_item.find_next_sibling()
                         if next_sibling and next_sibling.name == "ul":
-                            logging.debug(f" -> Found subsequent UL, parsing children for menu '{item_text}'...")
+                            logging.debug(
+                                f" -> Found subsequent UL, parsing children for menu '{item_text}'...")
                             child_count = 0
                             child_selector = self.selectors.APP_API_DOC_ITEM[1]
                             for child_app_item in next_sibling.find_all(child_selector, recursive=False):
                                 child_clickable_selector = self.selectors.SIDEBAR_CLICKABLE_LI[1]
-                                child_li = child_app_item.select_one(child_clickable_selector)
+                                child_li = child_app_item.select_one(
+                                    child_clickable_selector)
                                 if child_li:
                                     child_id = child_li.get("id")
                                     child_text_span_selector = self.selectors.ITEM_TEXT_SPAN[1]
-                                    child_text_element = child_li.select_one(child_text_span_selector)
+                                    child_text_element = child_li.select_one(
+                                        child_text_span_selector)
                                     child_text = "Unnamed Sub-Item"
                                     if child_text_element:
-                                        child_text = child_text_element.get_text(strip=True)
-                                        child_text = child_text.replace("<!---->", "").strip()
+                                        child_text = child_text_element.get_text(
+                                            strip=True)
+                                        child_text = child_text.replace(
+                                            "<!---->", "").strip()
 
                                     if child_text == "Overview":
-                                        logging.debug(f"  -> Skipping 'Overview' sub-item (ID: {child_id})")
+                                        logging.debug(
+                                            f"  -> Skipping 'Overview' sub-item (ID: {child_id})")
                                         continue
 
                                     if child_text and child_id:
-                                        logging.debug(f"  -> Found Sub-Item: '{child_text}' (ID: {child_id})")
+                                        logging.debug(
+                                            f"  -> Found Sub-Item: '{child_text}' (ID: {child_id})")
                                         children.append({
                                             "text": child_text,
                                             "id": child_id,
@@ -126,8 +136,10 @@ class StructureParser:
                                         })
                                         child_count += 1
                                     else:
-                                        logging.warning(f"  -> Found child LI but missing text or ID: {child_li.prettify()}")
-                            logging.debug(f" -> Parsed {child_count} children for menu '{item_text}' from subsequent UL.")
+                                        logging.warning(
+                                            f"  -> Found child LI but missing text or ID: {child_li.prettify()}")
+                            logging.debug(
+                                f" -> Parsed {child_count} children for menu '{item_text}' from subsequent UL.")
 
                     else:  # Not a menu, must be a simple item
                         item_type = "item"
@@ -138,13 +150,15 @@ class StructureParser:
                             item_text = text_element.get_text(strip=True)
                             item_text = item_text.replace("<!---->", "").strip()
                         if not text_element:
-                            logging.warning(f"Classified as ITEM but couldn't find text span for LI ID {item_id}: {clickable_li.prettify()}")
+                            logging.warning(
+                                f"Classified as ITEM but couldn't find text span for LI ID {item_id}: {clickable_li.prettify()}")
                         item_id_str = item_id or "Missing"
                         logging.debug(f"Found Item: '{item_text}' (ID: {item_id_str})")
 
                     # Skip "Overview" items/menus at the top level too
                     if item_text == "Overview":
-                        logging.debug(f"Skipping top-level '{item_text}' {item_type} (ID: {item_id})")
+                        logging.debug(
+                            f"Skipping top-level '{item_text}' {item_type} (ID: {item_id})")
                         continue
 
                     # Add the found item/menu. Check for text/type, ID is optional for menus.
@@ -152,9 +166,11 @@ class StructureParser:
                         # Log a warning if an ID is missing, especially for items
                         if not item_id:
                             if item_type == "item":
-                                logging.warning(f"Found ITEM without ID, will be skipped during processing. Text='{item_text}'")
+                                logging.warning(
+                                    f"Found ITEM without ID, will be skipped during processing. Text='{item_text}'")
                             else:  # item_type == "menu"
-                                logging.debug(f"Found MENU without ID. Will process children. Text='{item_text}'")
+                                logging.debug(
+                                    f"Found MENU without ID. Will process children. Text='{item_text}'")
 
                         # Define entry type explicitly to allow for optional 'children'
                         entry: Dict[str, Any] = {
@@ -168,13 +184,16 @@ class StructureParser:
                             entry["children"] = current_children
                         cast(List, current_header_group["children"]).append(entry)
                     else:
-                        logging.warning(f"Could not add entry: Missing text or type. Text='{item_text}', Type='{item_type}', ID={item_id}")
+                        logging.warning(
+                            f"Could not add entry: Missing text or type. Text='{item_text}', Type='{item_type}', ID={item_id}")
 
             # Case 2: It might be a plain UL (e.g., for menu children)
             elif element.name == "ul":
-                logging.warning(f"Found a top-level UL sibling to app-api-doc-item. This might be unexpected. Content: {element.prettify()[:100]}...")
+                logging.warning(
+                    f"Found a top-level UL sibling to app-api-doc-item. This might be unexpected. Content: {element.prettify()[:100]}...")
 
-        logging.info(f"Finished parsing structure. Found {len(structure_by_header)} header groups.")
+        logging.info(
+            f"Finished parsing structure. Found {len(structure_by_header)} header groups.")
         return structure_by_header
 
     def flatten_sidebar_structure(self, structured_data: List[Dict]) -> List[Dict]:
@@ -192,7 +211,8 @@ class StructureParser:
                     parent_menu_text=None,  # Top level items have no parent menu text within the group
                     level=0,
                 )
-        logging.info(f"Flattened structure contains {len(flattened_list)} processable items.")
+        logging.info(
+            f"Flattened structure contains {len(flattened_list)} processable items.")
         return flattened_list
 
     def _flatten_recursive(
@@ -201,7 +221,8 @@ class StructureParser:
         result_list: List[Dict],
         header: Optional[str],
         menu: Optional[str],  # The immediate parent menu's text
-        parent_menu_text: Optional[str],  # The parent menu's text (could be same as menu)
+        # The parent menu's text (could be same as menu)
+        parent_menu_text: Optional[str],
         level: int,
     ):
         """Recursive helper to flatten the structure."""
@@ -214,7 +235,8 @@ class StructureParser:
         if item_type != "menu" and (not item_id or not item_text or not item_type):
             logging.warning(f"Skipping non-menu item due to missing data: {item}")
             return
-        elif item_type == "menu" and (not item_text or not item_type):  # Menus still need text and type
+        # Menus still need text and type
+        elif item_type == "menu" and (not item_text or not item_type):
             logging.warning(f"Skipping menu item due to missing text/type: {item}")
             return
 

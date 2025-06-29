@@ -197,3 +197,6 @@ plan/
 output/
 debug/
 logs/
+
+# Benchmark files
+benchmark_results.json

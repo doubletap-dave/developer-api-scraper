@@ -169,4 +169,5 @@ class ResumeManager:
         print(f"{'='*50}")
 
         # Log the same information
-        logging.info(f"Resume info - Total: {total_items}, Existing: {existing_count}, Remaining: {remaining_count}")
+        logging.info(
+            f"Resume info - Total: {total_items}, Existing: {existing_count}, Remaining: {remaining_count}")

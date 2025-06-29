@@ -60,7 +60,8 @@ class DriverManager:
             is_headless = headless if headless is not None else webdriver_config.headless
         else:
             browser_type = browser or webdriver_config.get("browser", "chrome").lower()
-            is_headless = headless if headless is not None else webdriver_config.get("headless", True)
+            is_headless = headless if headless is not None else webdriver_config.get(
+                "headless", True)
 
         logging.info(f"Setting up {browser_type} driver (headless: {is_headless})")
 
@@ -154,7 +155,8 @@ class DriverManager:
 
                 if not is_headless:
                     if pause_seconds > 0:
-                        logging.info(f"Non-headless mode: pausing for {pause_seconds} seconds before cleanup...")
+                        logging.info(
+                            f"Non-headless mode: pausing for {pause_seconds} seconds before cleanup...")
                         await asyncio.sleep(pause_seconds)
 
                 self.driver.quit()

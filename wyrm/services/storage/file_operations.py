@@ -153,7 +153,8 @@ class FileOperations:
         item_id = item.id if hasattr(item, 'id') else item.get('id', 'unknown')
 
         # Clean text for filename
-        safe_text = "".join(c for c in text if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        safe_text = "".join(c for c in text if c.isalnum()
+                            or c in (' ', '-', '_')).rstrip()
         safe_text = safe_text.replace(' ', '_')
 
         # Limit length and add ID
@@ -226,7 +227,8 @@ class FileOperations:
             True if saved successfully, False otherwise
         """
         try:
-            output_file = self._get_output_file_path(header, menu, item_text, base_output_dir)
+            output_file = self._get_output_file_path(
+                header, menu, item_text, base_output_dir)
 
             # Check if file already exists and overwrite is not enabled
             if output_file.exists() and not overwrite:
@@ -322,7 +324,8 @@ class FileOperations:
         if allow_unicode:
             value = unicodedata.normalize('NFKC', value)
         else:
-            value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
+            value = unicodedata.normalize('NFKD', value).encode(
+                'ascii', 'ignore').decode('ascii')
 
         # Replace spaces and other separators with hyphens
         value = re.sub(r'[-\s_/\\]+', '-', value)

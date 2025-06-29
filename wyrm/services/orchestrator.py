@@ -16,6 +16,7 @@ from wyrm.models.config import AppConfig
 from wyrm.models.scrape import SidebarStructure, SidebarItem
 from wyrm.services.configuration_service import ConfigurationService
 from wyrm.services.navigation import NavigationService
+from wyrm.services.parallel_orchestrator import ParallelOrchestrator
 from wyrm.services.parsing import ParsingService
 from wyrm.services.progress_service import ProgressService
 from wyrm.services.storage import StorageService
@@ -59,6 +60,7 @@ class Orchestrator:
         self.storage_service = StorageService()
         self.progress_service = ProgressService()
         self._config = None  # Store config for cleanup
+        self._full_expansion_done = False  # Prevents duplicate full-site expansions
 
     async def run_scraping_workflow(
         self,
@@ -75,6 +77,7 @@ class Orchestrator:
         resume_info: bool = False,
         structure_filename: Optional[str] = None,
         html_filename: Optional[str] = None,
+        force_full_expansion: bool = False,
     ) -> None:
         """Run the complete scraping workflow.
 
@@ -113,6 +116,7 @@ class Orchestrator:
                 "headless": headless,
                 "log_level": log_level,
                 "max_expand_attempts": max_expand_attempts,
+                "force_full_expansion": force_full_expansion,
             }
             config = self.config_service.merge_cli_overrides(config, cli_args)
 
@@ -133,7 +137,7 @@ class Orchestrator:
             self.config_service.setup_directories(config_values)
 
             # Handle sidebar structure loading/parsing
-            sidebar_structure = await self._handle_sidebar_structure(
+            sidebar_structure, from_cache = await self._handle_sidebar_structure(
                 config, config_values, save_structure, save_html,
                 structure_filename, html_filename, resume_info, force
             )
@@ -141,7 +145,7 @@ class Orchestrator:
             # Process items from structure
             await self._process_items_from_structure(
                 sidebar_structure, config_values, force,
-                test_item_id, max_items, resume_info
+                test_item_id, max_items, resume_info, from_cache
             )
 
         except KeyboardInterrupt:
@@ -163,7 +167,7 @@ class Orchestrator:
         html_filename: Optional[str],
         resume_info: bool,
         force: bool,
-    ) -> SidebarStructure:
+    ) -> tuple[SidebarStructure, bool]:
         """Handle sidebar structure loading or parsing.
 
         Attempts to load existing structure from file first. If not found or
@@ -188,13 +192,14 @@ class Orchestrator:
         """
         # Use debug directory for structure file only in debug mode
         if save_structure:
-            structure_filepath = self.parsing_service.get_structure_filepath(config_values)
+            structure_filepath = self.parsing_service.get_structure_filepath(
+                config_values)
         else:
             # In normal mode, use logs directory for structure file
             structure_filepath = Path("logs") / "sidebar_structure.json"
 
         # Try to load existing structure first
-        sidebar_structure = self.parsing_service.load_existing_structure(
+        sidebar_structure, from_cache = self.parsing_service.load_existing_structure(
             structure_filepath
         )
 
@@ -205,7 +210,8 @@ class Orchestrator:
                 # Convert to SidebarStructure model to check validity
                 temp_structure = SidebarStructure(
                     structured_data=sidebar_structure.get('structured_data', []),
-                    items=[SidebarItem(**item) for item in sidebar_structure.get('items', [])]
+                    items=[SidebarItem(**item)
+                           for item in sidebar_structure.get('items', [])]
                 )
                 valid_items = temp_structure.valid_items
                 total_items = len(sidebar_structure.get('items', []))
@@ -229,7 +235,8 @@ class Orchestrator:
                         total_items=total_items,
                         valid_items_count=len(valid_items),
                         valid_ratio=f"{valid_item_ratio:.2%}",
-                        reason="too few valid items" if len(valid_items) < min_valid_items else "low valid ratio"
+                        reason="too few valid items" if len(
+                            valid_items) < min_valid_items else "low valid ratio"
                     )
             except Exception as e:
                 self.logger.warning(
@@ -243,13 +250,14 @@ class Orchestrator:
                 config, config_values, save_structure, save_html,
                 structure_filename, html_filename, structure_filepath
             )
+            from_cache = False
 
         # Handle resume check
         await self._handle_resume_check(
             sidebar_structure, config_values, resume_info, force
         )
 
-        return sidebar_structure
+        return sidebar_structure, from_cache
 
     async def _perform_live_parsing(
         self,
@@ -290,6 +298,7 @@ class Orchestrator:
 
         self.logger.info("Performing menu expansion to reveal all items...")
         await self.navigation_service.expand_all_menus_comprehensive()
+        self._full_expansion_done = True
 
         self.logger.info("Extracting fully expanded sidebar structure...")
         # Get the updated sidebar HTML after expansion
@@ -373,6 +382,7 @@ class Orchestrator:
         test_item_id: Optional[str],
         max_items: Optional[int],
         resume_info: bool,
+        from_cache: bool,
     ) -> None:
         """Process items from the sidebar structure.
 
@@ -400,6 +410,20 @@ class Orchestrator:
             valid_items, max_items, test_item_id
         )
 
+        # Log whether structure came from cache or was parsed live
+        if from_cache:
+            self.logger.info(
+                "Processing items from cached structure",
+                count=len(items_to_process),
+                source="cache"
+            )
+        else:
+            self.logger.info(
+                "Processing items from live-parsed structure",
+                count=len(items_to_process),
+                source="live_parsing"
+            )
+
         self.logger.info("Processing items", count=len(items_to_process))
 
         # CRITICAL: Ensure NavigationService is initialized before processing items
@@ -411,15 +435,157 @@ class Orchestrator:
 
             # When using cached data, we need to navigate to the site and expand menus
             # since the browser session is fresh and menus are collapsed
-            self.logger.info("Navigating to site and expanding menus for cached data processing...")
+            self.logger.info(
+                "Navigating to site and expanding menus for cached data processing...")
             await self.navigation_service.navigate_and_wait(self._config, config_values)
 
-            # Expand all menus so items are accessible
-            self.logger.info("Expanding all menus to make cached items accessible...")
-            await self.navigation_service.expand_all_menus_comprehensive()
-            self.logger.info("Menu expansion completed - items should now be accessible")
+            # Conditional menu expansion logic
+            should_expand = False
+            expansion_reason = ""
 
-        # Process items with progress tracking
+            if not from_cache:
+                # Always expand when structure was just parsed (not from cache)
+                should_expand = True
+                expansion_reason = "structure was just parsed (not from cache)"
+            elif from_cache and not self._full_expansion_done:
+                # Check if force_full_expansion flag, force override, or validate_cache config is set
+                if config_values.get('force_full_expansion', False):
+                    should_expand = True
+                    expansion_reason = "force_full_expansion flag enabled"
+                elif force or config_values.get('validate_cache', False):
+                    should_expand = True
+                    expansion_reason = "force override or validate_cache enabled"
+                else:
+                    # Skip expansion for cached data when full expansion not done
+                    self.logger.info(
+                        "Skipping full menu expansion for cached structure - relying on per-item expansion",
+                        reason="using cached structure and no force/validate_cache override"
+                    )
+            elif self._full_expansion_done:
+                # Already expanded in this session
+                self.logger.info(
+                    "Menu expansion already completed in this session, skipping")
+
+            if should_expand:
+                self.logger.info(f"Expanding all menus - {expansion_reason}")
+                await self.navigation_service.expand_all_menus_comprehensive()
+                self._full_expansion_done = True
+                self.logger.info(
+                    "Menu expansion completed - items should now be accessible")
+
+        # Choose processing mode: parallel or sequential
+        await self._process_items_hybrid_mode(items_to_process, config_values)
+
+    async def _process_items_hybrid_mode(
+        self,
+        items_to_process: List[Dict],
+        config_values: Dict,
+    ) -> None:
+        """Choose between parallel and sequential processing modes.
+
+        This method implements the hybrid approach:
+        1. Check if parallel processing is enabled and feasible
+        2. Estimate performance benefits
+        3. Choose the optimal processing mode
+        4. Provide graceful fallback if parallel processing fails
+
+        Args:
+            items_to_process: List of sidebar items to process
+            config_values: Configuration values including concurrency settings
+
+        Returns:
+            None
+        """
+        num_items = len(items_to_process)
+
+        # Check if parallel processing is enabled
+        if not config_values.get('concurrency_enabled', True):
+            self.logger.info(
+                "Parallel processing disabled in configuration, using sequential mode"
+            )
+            await self._process_items_with_progress(items_to_process, config_values)
+            return
+
+        # For small numbers of items, sequential might be faster due to overhead
+        min_items_for_parallel = 5
+        if num_items < min_items_for_parallel:
+            self.logger.info(
+                "Item count below parallel threshold, using sequential mode",
+                item_count=num_items,
+                threshold=min_items_for_parallel
+            )
+            await self._process_items_with_progress(items_to_process, config_values)
+            return
+
+        # Create parallel orchestrator and estimate performance
+        parallel_orchestrator = ParallelOrchestrator(self.progress_service)
+        time_estimates = await parallel_orchestrator.estimate_processing_time(
+            num_items, config_values
+        )
+
+        # Log performance estimates
+        self.logger.info(
+            "Processing mode analysis",
+            items=num_items,
+            sequential_estimate_min=int(time_estimates['sequential_estimate'] / 60),
+            parallel_estimate_min=int(time_estimates['parallel_estimate'] / 60),
+            speedup_factor=f"{time_estimates['parallel_speedup']:.1f}x"
+        )
+
+        # Use parallel if it offers significant speedup (>1.3x)
+        min_speedup = 1.3
+        if time_estimates['parallel_speedup'] >= min_speedup:
+            try:
+                self.logger.info(
+                    "Using parallel processing mode",
+                    max_workers=config_values.get('max_concurrent_tasks', 3),
+                    expected_speedup=f"{time_estimates['parallel_speedup']:.1f}x"
+                )
+
+                # Convert dict items to SidebarItem objects for parallel processing
+                sidebar_items = []
+                for item in items_to_process:
+                    if hasattr(item, 'id'):  # Already a SidebarItem
+                        sidebar_items.append(item)
+                    else:  # Dict item, convert to SidebarItem
+                        try:
+                            sidebar_item = SidebarItem(**item)
+                            sidebar_items.append(sidebar_item)
+                        except Exception as e:
+                            self.logger.warning(
+                                "Failed to convert item to SidebarItem, skipping",
+                                item=item,
+                                error=str(e)
+                            )
+                            continue
+
+                # Process with parallel orchestrator
+                results = await parallel_orchestrator.process_items_parallel(
+                    sidebar_items, self._config, config_values
+                )
+
+                self.logger.info(
+                    "Parallel processing completed",
+                    processed=results['processed'],
+                    failed=results['failed'],
+                    skipped=results['skipped']
+                )
+                return
+
+            except Exception as e:
+                self.logger.error(
+                    "Parallel processing failed, falling back to sequential",
+                    error=str(e)
+                )
+                # Fall through to sequential processing
+        else:
+            self.logger.info(
+                "Sequential processing preferred based on performance analysis",
+                speedup_factor=f"{time_estimates['parallel_speedup']:.1f}x",
+                min_required=f"{min_speedup}x"
+            )
+
+        # Use sequential processing (fallback or by choice)
         await self._process_items_with_progress(items_to_process, config_values)
 
     async def _process_items_with_progress(
@@ -491,7 +657,8 @@ class Orchestrator:
         """
         # Handle both dict and SidebarItem objects
         item_text = item.text if hasattr(item, 'text') else item.get('text', 'Unknown')
-        item_id = getattr(item, 'id', None) or item.get('id', 'unknown') if isinstance(item, dict) else 'unknown'
+        item_id = getattr(item, 'id', None) or item.get(
+            'id', 'unknown') if isinstance(item, dict) else 'unknown'
 
         progress.update(task_id, description=f"Processing: {item_text}")
 

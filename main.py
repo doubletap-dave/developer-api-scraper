@@ -78,6 +78,12 @@ def main(
         "--resume-info",
         help="Show resume information and exit (no processing)",
     ),
+    force_full_expansion: bool = typer.Option(
+        False,
+        "--force-full-expansion",
+        help="Force full menu expansion even when using cached "
+             "structure (useful for debugging cache issues)",
+    ),
 ) -> None:
     """Scrape developer API documentation with intelligent navigation.
 
@@ -120,6 +126,7 @@ def main(
                 resume_info=resume_info,
                 structure_filename=save_structure,
                 html_filename=save_html,
+                force_full_expansion=force_full_expansion,
             )
         )
     except KeyboardInterrupt:
@@ -131,7 +138,10 @@ def main(
 
 def graceful_exit(signum, frame):
     """Handle graceful shutdown on SIGINT (Ctrl+C)."""
-    console.print("\n[yellow]Received interrupt signal. Gracefully shutting down...[/yellow]")
+    console.print(
+        "\n[yellow]Received interrupt signal. Gracefully shutting "
+        "down...[/yellow]"
+    )
 
     try:
         if _orchestrator:

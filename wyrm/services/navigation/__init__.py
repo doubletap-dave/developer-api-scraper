@@ -134,12 +134,15 @@ class NavigationService:
                         )
 
                         # Check if there are any error elements on the page
-                        error_elements = driver.find_elements("css selector", "[class*='error'], [class*='Error']")
+                        error_elements = driver.find_elements(
+                            "css selector", "[class*='error'], [class*='Error']")
                         if error_elements:
-                            self.logger.warning(f"Found {len(error_elements)} potential error elements on page")
+                            self.logger.warning(
+                                f"Found {len(error_elements)} potential error elements on page")
 
                     except Exception as diagnostic_error:
-                        self.logger.debug("Error collecting diagnostics", error=str(diagnostic_error))
+                        self.logger.debug("Error collecting diagnostics",
+                                          error=str(diagnostic_error))
 
                     # Wait a bit before retry
                     await asyncio.sleep(2.0)
@@ -152,7 +155,8 @@ class NavigationService:
             retries=max_retries,
             current_url=driver.current_url
         )
-        raise TimeoutException(f"Sidebar container not found within {timeout} seconds after {max_retries} attempts")
+        raise TimeoutException(
+            f"Sidebar container not found within {timeout} seconds after {max_retries} attempts")
 
     async def _wait_for_sidebar_content(self, timeout: int = 15) -> None:
         """Wait for the actual sidebar content (app-api-doc-item elements) to load.
@@ -179,7 +183,8 @@ class NavigationService:
                 WebDriverWait(driver, timeout).until(
                     EC.presence_of_element_located(self.selectors.APP_API_DOC_ITEM)
                 )
-                self.logger.debug("Sidebar content loaded - app-api-doc-item elements found.")
+                self.logger.debug(
+                    "Sidebar content loaded - app-api-doc-item elements found.")
 
                 # Additional short wait for content to stabilize
                 await asyncio.sleep(2.0)
@@ -199,21 +204,27 @@ class NavigationService:
                     continue
                 else:
                     # Final attempt failed, log diagnostic info
-                    self.logger.warning("Final attempt failed, collecting diagnostic info")
+                    self.logger.warning(
+                        "Final attempt failed, collecting diagnostic info")
 
                     # Let's check what's actually in the sidebar
                     try:
                         sidebar_html = await self._get_sidebar_html()
-                        self.logger.debug("Current sidebar HTML preview", html_preview=sidebar_html[:500])
+                        self.logger.debug("Current sidebar HTML preview",
+                                          html_preview=sidebar_html[:500])
 
                         # Check if there are any other elements that might indicate loading
-                        other_elements = driver.find_elements("css selector", "div.filter-api-sidebar-wrapper *")
-                        self.logger.debug("Elements found in sidebar container", element_count=len(other_elements))
+                        other_elements = driver.find_elements(
+                            "css selector", "div.filter-api-sidebar-wrapper *")
+                        self.logger.debug(
+                            "Elements found in sidebar container", element_count=len(other_elements))
 
                     except Exception as e:
-                        self.logger.debug("Error examining sidebar content", error=str(e))
+                        self.logger.debug(
+                            "Error examining sidebar content", error=str(e))
 
-                    raise TimeoutException(f"Sidebar content did not load within {timeout} seconds after {max_retries} attempts")
+                    raise TimeoutException(
+                        f"Sidebar content did not load within {timeout} seconds after {max_retries} attempts")
 
     async def _get_sidebar_html(self) -> str:
         """Get the raw HTML content of the sidebar."""
@@ -279,11 +290,13 @@ class NavigationService:
         """
         # Check driver initialization first
         if not self.driver_manager.get_driver():
-            raise RuntimeError("WebDriver not initialized. Call initialize_driver() first.")
+            raise RuntimeError(
+                "WebDriver not initialized. Call initialize_driver() first.")
 
         # Check sub-module initialization
         if not self.menu_expander or not self.content_navigator:
-            raise RuntimeError("Navigation sub-modules not initialized. Call initialize_driver() first.")
+            raise RuntimeError(
+                "Navigation sub-modules not initialized. Call initialize_driver() first.")
 
         # Handle both SidebarItem models and dict items for backward compatibility
         if hasattr(item, 'text'):

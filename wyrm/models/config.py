@@ -71,6 +71,8 @@ class BehaviorConfig(BaseModel):
                                      description="Maximum loops to try expanding menus")
     skip_existing: bool = Field(default=True,
                                 description="Skip files if they already exist")
+    force_full_expansion: bool = Field(default=False,
+                                       description="Force full menu expansion even when using cached structure")
 
     # Non-headless mode overrides
     max_expand_attempts_noheadless: Optional[int] = Field(
@@ -81,6 +83,48 @@ class BehaviorConfig(BaseModel):
         """Ensure attempt counts are positive."""
         if v is not None and v <= 0:
             raise ValueError("Attempt counts must be positive integers")
+        return v
+
+
+class ConcurrencyConfig(BaseModel):
+    """Parallel processing configuration settings."""
+
+    max_concurrent_tasks: int = Field(
+        default=3,
+        description="Maximum number of concurrent content extraction tasks")
+    enabled: bool = Field(
+        default=True,
+        description="Enable parallel processing")
+    task_start_delay: float = Field(
+        default=0.5,
+        description="Minimum delay between starting new tasks (seconds)")
+    max_parallel_retries: int = Field(
+        default=2,
+        description="Maximum retries for failed parallel tasks before fallback")
+
+    @validator("max_concurrent_tasks")
+    def validate_max_concurrent_tasks(cls, v: int) -> int:
+        """Ensure max_concurrent_tasks is reasonable."""
+        if v < 1:
+            raise ValueError("max_concurrent_tasks must be at least 1")
+        if v > 10:
+            raise ValueError("max_concurrent_tasks should not exceed 10 for stability")
+        return v
+
+    @validator("task_start_delay")
+    def validate_task_start_delay(cls, v: float) -> float:
+        """Ensure task_start_delay is non-negative."""
+        if v < 0:
+            raise ValueError("task_start_delay must be non-negative")
+        return v
+
+    @validator("max_parallel_retries")
+    def validate_max_parallel_retries(cls, v: int) -> int:
+        """Ensure max_parallel_retries is reasonable."""
+        if v < 0:
+            raise ValueError("max_parallel_retries must be non-negative")
+        if v > 5:
+            raise ValueError("max_parallel_retries should not exceed 5")
         return v
 
 
@@ -128,6 +172,7 @@ class AppConfig(BaseModel):
     webdriver: WebDriverConfig = Field(default_factory=WebDriverConfig)
     delays: DelaysConfig = Field(default_factory=DelaysConfig)
     behavior: BehaviorConfig = Field(default_factory=BehaviorConfig)
+    concurrency: ConcurrencyConfig = Field(default_factory=ConcurrencyConfig)
     debug_settings: DebugConfig = Field(default_factory=DebugConfig)
 
     @validator("target_url")

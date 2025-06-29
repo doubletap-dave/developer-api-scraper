@@ -1,4 +1,4 @@
-target_url: "https://developer.dell.com/apis/4008/versions/4.6.1/docs"
+target_url: "https://developer.dell.com/apis/4008/versions/3.6/docs"
 output_directory: "output"
 log_file: "logs/wyrm.log"
 log_level: "INFO" # DEBUG, INFO, WARNING, ERROR, CRITICAL
@@ -34,6 +34,17 @@ behavior:
 
   # --- Optional overrides for non-headless mode ---
   # max_expand_attempts_noheadless: 15
+
+# Parallel Processing Settings
+concurrency:
+  # Maximum number of concurrent content extraction tasks
+  max_concurrent_tasks: 3
+  # Enable parallel processing (set to false to use sequential processing)
+  enabled: true
+  # Rate limiting: minimum delay between starting new tasks (seconds)
+  task_start_delay: 0.5
+  # Maximum retries for failed parallel tasks before falling back to sequential
+  max_parallel_retries: 2
 
 debug_settings:
   # Directory for debug outputs (structure.json, sidebar_debug.html)
