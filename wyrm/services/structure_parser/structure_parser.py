@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from .html_cleaner import HtmlCleaner
 from .markdown_converter import MarkdownConverter
 from .link_resolver import LinkResolver
+from .hierarchical_parser import HierarchicalStructureParser
 
 from ..selectors_service import SelectorsService
 
@@ -25,6 +26,9 @@ class StructureParser:
         self.html_cleaner = HtmlCleaner(selectors_service)
         self.markdown_converter = MarkdownConverter(selectors_service)
         self.link_resolver = LinkResolver(selectors_service)
+        self.hierarchical_parser = HierarchicalStructureParser(
+            self.html_cleaner, self.markdown_converter, self.link_resolver
+        )
 
     def parse(self, sidebar_html: str) -> List[Dict]:
         """Parse the sidebar HTML and map its structure.
@@ -44,128 +48,14 @@ class StructureParser:
         if not sidebar_root:
             return []
 
+        return self._delegate_parsing(sidebar_root, structure_type)
+
+    def _delegate_parsing(self, sidebar_root: Any, structure_type: str) -> List[Dict]:
+        """Delegates parsing based on the structure type."""
         if structure_type == "flat_with_trailing_header":
             return self._parse_flat_structure_with_trailing_header(sidebar_root)
-        else:
-            return self._parse_hierarchical_structure(sidebar_root)
+        return self.hierarchical_parser.parse_hierarchical_structure(sidebar_root)
 
-    def _parse_hierarchical_structure(self, sidebar_root: Any) -> List[Dict]:
-        """Parse hierarchical structure (4.x endpoints)."""
-        structure_by_header: List[Dict[str, Any]] = []
-        current_header_group: Optional[Dict[str, Any]] = None
-
-        # Iterate through the direct children of the main UL
-        for element in sidebar_root.children:
-            if not hasattr(element, 'name'):
-                continue  # Skip NavigableStrings like newlines
-
-            # Case 1: It's an app-api-doc-item wrapper
-            if element.name == "app-api-doc-item":
-                app_item = element
-
-                # 1a. Check for Header LI within app-item
-                header_info = self.html_cleaner.extract_header_info(app_item)
-                if header_info:
-                    logging.debug(f"Found Header Group: {header_info['header_text']}")
-                    current_header_group = {"header_text": header_info['header_text'], "children": []}
-                    structure_by_header.append(current_header_group)
-                    continue  # Move to the next element in sidebar_root_ul
-
-                # If we haven't found a header yet, skip
-                if not current_header_group:
-                    logging.warning(
-                        "Found sidebar item before finding the first header. Skipping.")
-                    continue
-
-                # 1b. Check for Clickable LI (Item or Menu) within app-item
-                clickable_li = app_item.select_one(
-                    "li.toc-item-highlight")
-                if clickable_li:
-                    item_id = self.link_resolver.extract_item_id(clickable_li)
-                    item_type = "item"  # Default
-                    is_expandable = False
-                    children = []  # For menus
-
-                    # Check if menu by looking for expander icons
-                    is_menu = self.html_cleaner.is_expandable_element(clickable_li)
-
-                    if is_menu:
-                        item_type = "menu"
-                        is_expandable = True
-                        item_text = self.markdown_converter.extract_item_text(clickable_li, is_menu=True)
-                        item_id_str = item_id or "Missing"
-                        logging.debug(f"Found Menu: '{item_text}' (ID: {item_id_str})")
-
-                        # Check for children in the next sibling UL
-                        children_ul = self.html_cleaner.find_menu_children(app_item)
-                        if children_ul:
-                            logging.debug(
-                                f" -> Found subsequent UL, parsing children for menu '{item_text}'...")
-                            child_count = 0
-                            for child_app_item in children_ul.find_all("app-api-doc-item", recursive=False):
-                                child_clickable_li = child_app_item.select_one(
-                                    "li.toc-item-highlight")
-                                if child_clickable_li:
-                                    child_id = self.link_resolver.extract_item_id(child_clickable_li)
-                                    child_text = self.markdown_converter.extract_child_text(child_clickable_li)
-
-                                    if self.markdown_converter.should_skip_item(child_text):
-                                        logging.debug(
-                                            f"  -> Skipping 'Overview' sub-item (ID: {child_id})")
-                                        continue
-
-                                    if child_text and child_id:
-                                        logging.debug(
-                                            f"  -> Found Sub-Item: '{child_text}' (ID: {child_id})")
-                                        child_entry = self.markdown_converter.create_child_entry(child_text, child_id)
-                                        children.append(child_entry)
-                                        child_count += 1
-                                    else:
-                                        logging.warning(
-                                            f"  -> Found child LI but missing text or ID: {child_clickable_li.prettify()}")
-                            logging.debug(
-                                f" -> Parsed {child_count} children for menu '{item_text}' from subsequent UL.")
-
-                    else:  # Not a menu, must be a simple item
-                        item_type = "item"
-                        item_text = self.markdown_converter.extract_item_text(clickable_li, is_menu=False)
-                        item_id_str = item_id or "Missing"
-                        logging.debug(f"Found Item: '{item_text}' (ID: {item_id_str})")
-
-                    # Skip "Overview" items/menus at the top level too
-                    if self.markdown_converter.should_skip_item(item_text, item_type):
-                        logging.debug(
-                            f"Skipping top-level '{item_text}' {item_type} (ID: {item_id})")
-                        continue
-
-                    # Validate ID requirements
-                    if not self.link_resolver.validate_id_requirement(item_id, item_type, item_text):
-                        continue
-
-                    # Add the found item/menu. Check for text/type, ID is optional for menus.
-                    if item_text and item_type:
-                        # Define entry type explicitly to allow for optional 'children'
-                        entry: Dict[str, Any] = {
-                            "text": item_text,
-                            "id": item_id,  # Store None if missing
-                            "type": item_type,
-                            "is_expandable": is_expandable,
-                        }
-                        if item_type == "menu":
-                            entry["children"] = children
-                        current_header_group["children"].append(entry)
-                    else:
-                        logging.warning(
-                            f"Could not add entry: Missing text or type. Text='{item_text}', Type='{item_type}', ID={item_id}")
-
-            # Case 2: It might be a plain UL (e.g., for menu children)
-            elif element.name == "ul":
-                logging.warning(
-                    f"Found a top-level UL sibling to app-api-doc-item. This might be unexpected. Content: {element.prettify()[:100]}...")
-
-        logging.info(
-            f"Finished parsing hierarchical structure. Found {len(structure_by_header)} header groups.")
-        return structure_by_header
 
     def _parse_flat_structure_with_trailing_header(self, sidebar_root: Any) -> List[Dict]:
         """Parse flat structure with trailing header (3.x endpoints).

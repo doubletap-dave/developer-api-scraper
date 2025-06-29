@@ -233,8 +233,15 @@ class MenuScanner:
             Dictionary containing expansion path information
         """
         try:
-            # JavaScript to find all ancestor menus that need expansion
-            js_script = """
+            js_script = self._get_powerflex_expansion_script()
+            return self.driver.execute_script(js_script, item_id, item_text)
+        except Exception as e:
+            logging.error(f"Error finding PowerFlex expansion path for '{item_text}': {e}")
+            return {"found": False, "expansions": []}
+
+    def _get_powerflex_expansion_script(self) -> str:
+        """Generate JavaScript for PowerFlex expansion path detection."""
+        return """
             // PowerFlex-specific DOM traversal to find expansion path
             function findExpansionPath(targetId, targetText) {
                 var expansionsNeeded = [];
@@ -314,14 +321,7 @@ class MenuScanner:
             }
 
             return findExpansionPath(arguments[0], arguments[1]);
-            """
-
-            # Execute the JavaScript to find the expansion path
-            return self.driver.execute_script(js_script, item_id, item_text)
-
-        except Exception as e:
-            logging.error(f"Error finding PowerFlex expansion path for '{item_text}': {e}")
-            return {"found": False, "expansions": []}
+        """
 
     def reveal_standalone_pages(self) -> List[Dict[str, Any]]:
         """Look for and identify standalone pages that aren't under expandable menus.

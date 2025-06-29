@@ -1,4 +1,4 @@
-target_url: "https://developer.dell.com/apis/4008/versions/3.6/docs/1-Introduction.md"
+target_url: "https://developer.dell.com/apis/4008/versions/3.6/docs/"
 output_directory: "output"
 log_file: "logs/wyrm.log"
 log_level: "DEBUG" # DEBUG, INFO, WARNING, ERROR, CRITICAL

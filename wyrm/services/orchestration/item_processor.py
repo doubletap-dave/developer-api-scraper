@@ -118,18 +118,27 @@ class ItemProcessor:
         Returns:
             None
         """
-        from wyrm.services.parallel_orchestrator import ParallelOrchestrator
-        from wyrm.models.scrape import SidebarItem
-        
+        # Check if we should use sequential processing
+        if self._should_use_sequential_processing(items_to_process, config_values):
+            await self._process_items_with_progress(items_to_process, config_values)
+            return
+
+        # Try parallel processing with fallback
+        parallel_success = await self._try_parallel_processing(items_to_process, config_values)
+        if not parallel_success:
+            # Fallback to sequential processing
+            await self._process_items_with_progress(items_to_process, config_values)
+
+    def _should_use_sequential_processing(self, items_to_process: List[Dict], config_values: Dict) -> bool:
+        """Determine if sequential processing should be used."""
         num_items = len(items_to_process)
 
-        # Check if parallel processing is enabled
+        # Check if parallel processing is disabled
         if not config_values.get('concurrency_enabled', True):
             self.logger.info(
                 "Parallel processing disabled in configuration, using sequential mode"
             )
-            await self._process_items_with_progress(items_to_process, config_values)
-            return
+            return True
 
         # For small numbers of items, sequential might be faster due to overhead
         min_items_for_parallel = 5
@@ -139,16 +148,41 @@ class ItemProcessor:
                 item_count=num_items,
                 threshold=min_items_for_parallel
             )
-            await self._process_items_with_progress(items_to_process, config_values)
-            return
+            return True
 
+        return False
+
+    async def _try_parallel_processing(self, items_to_process: List[Dict], config_values: Dict) -> bool:
+        """Attempt parallel processing and return success status."""
+        from wyrm.services.parallel_orchestrator import ParallelOrchestrator
+        
+        num_items = len(items_to_process)
+        
         # Create parallel orchestrator and estimate performance
         parallel_orchestrator = ParallelOrchestrator(self.orchestrator.progress_service)
         time_estimates = await parallel_orchestrator.estimate_processing_time(
             num_items, config_values
         )
 
-        # Log performance estimates
+        self._log_performance_estimates(num_items, time_estimates)
+
+        # Check if parallel processing is worth it
+        min_speedup = 1.3
+        if time_estimates['parallel_speedup'] < min_speedup:
+            self.logger.info(
+                "Sequential processing preferred based on performance analysis",
+                speedup_factor=f"{time_estimates['parallel_speedup']:.1f}x",
+                min_required=f"{min_speedup}x"
+            )
+            return False
+
+        # Try to execute parallel processing
+        return await self._execute_parallel_processing(
+            items_to_process, config_values, parallel_orchestrator, time_estimates
+        )
+
+    def _log_performance_estimates(self, num_items: int, time_estimates: Dict) -> None:
+        """Log performance analysis information."""
         self.logger.info(
             "Processing mode analysis",
             items=num_items,
@@ -157,61 +191,61 @@ class ItemProcessor:
             speedup_factor=f"{time_estimates['parallel_speedup']:.1f}x"
         )
 
-        # Use parallel if it offers significant speedup (>1.3x)
-        min_speedup = 1.3
-        if time_estimates['parallel_speedup'] >= min_speedup:
-            try:
-                self.logger.info(
-                    "Using parallel processing mode",
-                    max_workers=config_values.get('max_concurrent_tasks', 3),
-                    expected_speedup=f"{time_estimates['parallel_speedup']:.1f}x"
-                )
-
-                # Convert dict items to SidebarItem objects for parallel processing
-                sidebar_items = []
-                for item in items_to_process:
-                    if hasattr(item, 'id'):  # Already a SidebarItem
-                        sidebar_items.append(item)
-                    else:  # Dict item, convert to SidebarItem
-                        try:
-                            sidebar_item = SidebarItem(**item)
-                            sidebar_items.append(sidebar_item)
-                        except Exception as e:
-                            self.logger.warning(
-                                "Failed to convert item to SidebarItem, skipping",
-                                item=item,
-                                error=str(e)
-                            )
-                            continue
-
-                # Process with parallel orchestrator
-                results = await parallel_orchestrator.process_items_parallel(
-                    sidebar_items, self.orchestrator._config, config_values
-                )
-
-                self.logger.info(
-                    "Parallel processing completed",
-                    processed=results['processed'],
-                    failed=results['failed'],
-                    skipped=results['skipped']
-                )
-                return
-
-            except Exception as e:
-                self.logger.error(
-                    "Parallel processing failed, falling back to sequential",
-                    error=str(e)
-                )
-                # Fall through to sequential processing
-        else:
+    async def _execute_parallel_processing(
+        self, items_to_process: List[Dict], config_values: Dict, 
+        parallel_orchestrator, time_estimates: Dict
+    ) -> bool:
+        """Execute parallel processing and return success status."""
+        try:
             self.logger.info(
-                "Sequential processing preferred based on performance analysis",
-                speedup_factor=f"{time_estimates['parallel_speedup']:.1f}x",
-                min_required=f"{min_speedup}x"
+                "Using parallel processing mode",
+                max_workers=config_values.get('max_concurrent_tasks', 3),
+                expected_speedup=f"{time_estimates['parallel_speedup']:.1f}x"
             )
 
-        # Use sequential processing (fallback or by choice)
-        await self._process_items_with_progress(items_to_process, config_values)
+            # Convert items to SidebarItem objects
+            sidebar_items = self._convert_to_sidebar_items(items_to_process)
+
+            # Process with parallel orchestrator
+            results = await parallel_orchestrator.process_items_parallel(
+                sidebar_items, self.orchestrator._config, config_values
+            )
+
+            self.logger.info(
+                "Parallel processing completed",
+                processed=results['processed'],
+                failed=results['failed'],
+                skipped=results['skipped']
+            )
+            return True
+
+        except Exception as e:
+            self.logger.error(
+                "Parallel processing failed, falling back to sequential",
+                error=str(e)
+            )
+            return False
+
+    def _convert_to_sidebar_items(self, items_to_process: List[Dict]) -> List:
+        """Convert dict items to SidebarItem objects for parallel processing."""
+        from wyrm.models.scrape import SidebarItem
+        
+        sidebar_items = []
+        for item in items_to_process:
+            if hasattr(item, 'id'):  # Already a SidebarItem
+                sidebar_items.append(item)
+            else:  # Dict item, convert to SidebarItem
+                try:
+                    sidebar_item = SidebarItem(**item)
+                    sidebar_items.append(sidebar_item)
+                except Exception as e:
+                    self.logger.warning(
+                        "Failed to convert item to SidebarItem, skipping",
+                        item=item,
+                        error=str(e)
+                    )
+                    continue
+        return sidebar_items
 
     async def _process_items_with_progress(
         self,
