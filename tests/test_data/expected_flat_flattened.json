@@ -1,0 +1,29 @@
+[
+  {
+    "id": "docs-node-100",
+    "text": "Get All Items",
+    "type": "item",
+    "header": "API Resources",
+    "menu": null,
+    "parent_menu_text": null,
+    "level": 0
+  },
+  {
+    "id": "docs-node-200",
+    "text": "Create Item",
+    "type": "item",
+    "header": "API Resources",
+    "menu": null,
+    "parent_menu_text": null,
+    "level": 0
+  },
+  {
+    "id": null,
+    "text": "Resources",
+    "type": "menu",
+    "header": "API Resources",
+    "menu": null,
+    "parent_menu_text": null,
+    "level": 0
+  }
+]

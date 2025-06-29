@@ -21,9 +21,17 @@ jobs:
         python -m pip install --upgrade pip
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-    - name: Run pre-commit checks (lint, format, types)
-      run: |
-        pre-commit run --all-files
+    - name: Check code style with black
+      run: black --check .
+
+    - name: Check import sorting with isort
+      run: isort --check-only .
+
+    - name: Run flake8 linter
+      run: flake8 .
+
+    - name: Run custom line-count checker
+      run: python tools/line_count_checker.py
+
     - name: Run Tests with pytest
-      run: |
-        pytest
+      run: pytest --cov=./ --cov-fail-under=80

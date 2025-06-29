@@ -1,0 +1,27 @@
+[
+  {
+    "header_text": "API Resources",
+    "position": 7,
+    "children": [
+      {
+        "text": "Get All Items",
+        "id": "docs-node-100",
+        "type": "item",
+        "is_expandable": false
+      },
+      {
+        "text": "Create Item",
+        "id": "docs-node-200",
+        "type": "item",
+        "is_expandable": false
+      },
+      {
+        "text": "Resources",
+        "id": null,
+        "type": "menu",
+        "is_expandable": true,
+        "children": []
+      }
+    ]
+  }
+]

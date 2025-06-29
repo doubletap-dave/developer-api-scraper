@@ -2,16 +2,21 @@
 
 This package provides storage operations through specialized sub-modules:
 - ContentExtractor: Handles content extraction from web pages
-- FileOperations: Manages file saving and path generation
+- FileWriter: Manages atomic file writing with resume and checksum support
+- PathBuilder: Generates deterministic paths from item metadata
+- MarkdownSanitizer: Cleans and post-processes markdown content
 - ResumeManager: Handles resume information and status management
 """
 
-from typing import Dict, List
+import logging
+from typing import Dict, List, Optional
 from pathlib import Path
 from selenium.webdriver.remote.webdriver import WebDriver
 
 from .content_extractor import ContentExtractor
-from .file_operations import FileOperations
+from .file_writer import FileWriter
+from .path_builder import PathBuilder
+from .markdown_sanitizer import MarkdownSanitizer
 from .resume_manager import ResumeManager
 
 
@@ -25,7 +30,9 @@ class StorageService:
     def __init__(self) -> None:
         """Initialize the storage service with sub-modules."""
         self.content_extractor = ContentExtractor()
-        self.file_operations = FileOperations()
+        self.file_writer = FileWriter()
+        self.path_builder = PathBuilder()
+        self.markdown_sanitizer = MarkdownSanitizer()
         self.resume_manager = ResumeManager()
 
     def get_output_path(self, item, base_output_dir: Path) -> Path:
@@ -48,7 +55,7 @@ class StorageService:
             header = item.get("header")
             menu = item.get("menu")
 
-        return self.file_operations._get_output_file_path(
+        return self.path_builder.get_output_file_path(
             header=header,
             menu=menu,
             item_text=item_text,
@@ -92,7 +99,7 @@ class StorageService:
 
         # Save content if extracted
         if extracted_content:
-            saved = await self.file_operations.save_markdown(
+            saved = await self.save_markdown(
                 header=header,
                 menu=menu,
                 item_text=item_text,
@@ -102,7 +109,6 @@ class StorageService:
             )
             return saved
         else:
-            import logging
             logging.warning(f"No content extracted for item {item_id} ('{item_text}').")
             return False
 
@@ -144,6 +150,116 @@ class StorageService:
         self.resume_manager.display_resume_info(
             valid_items, existing_items, items_needing_processing, base_output_dir
         )
+    
+    async def save_markdown(
+        self,
+        header: Optional[str],
+        menu: Optional[str],
+        item_text: str,
+        markdown_content: str,
+        base_output_dir: Path,
+        overwrite: bool = False,
+        sanitize_content: bool = True,
+        verify_checksum: bool = True
+    ) -> bool:
+        """Save markdown content to file using coordinated sub-modules.
+        
+        This is the main entry point for saving markdown content. It coordinates
+        the path building, content sanitization, and atomic file writing.
+        
+        Args:
+            header: Header text for path generation
+            menu: Menu text for path generation  
+            item_text: Item text for filename
+            markdown_content: Content to save
+            base_output_dir: Base output directory
+            overwrite: Whether to overwrite existing files
+            sanitize_content: Whether to sanitize markdown content
+            verify_checksum: Whether to verify content integrity
+            
+        Returns:
+            True if saved successfully, False otherwise
+        """
+        try:
+            # Build and validate output path
+            output_file = self._build_and_validate_path(
+                header, menu, item_text, base_output_dir
+            )
+            if not output_file:
+                return False
+            
+            # Check file existence and handle skipping
+            if self._should_skip_existing_file(output_file, markdown_content, overwrite):
+                return True
+            
+            # Process content and write file
+            return self._process_and_write_content(
+                markdown_content, output_file, header, menu, item_text,
+                sanitize_content, verify_checksum
+            )
+            
+        except Exception as e:
+            logging.error(f"Failed to save markdown content: {e}")
+            return False
+
+    def _build_and_validate_path(self, header, menu, item_text, base_output_dir):
+        """Build output path and validate safety."""
+        # Build output file path using PathBuilder
+        output_file = self.path_builder.get_output_file_path(
+            header=header,
+            menu=menu,
+            item_text=item_text,
+            base_output_dir=base_output_dir
+        )
+        
+        # Validate path safety
+        if not self.path_builder.validate_path_safety(output_file):
+            logging.error(f"Path safety validation failed: {output_file}")
+            return None
+        
+        return output_file
+
+    def _should_skip_existing_file(self, output_file, markdown_content, overwrite):
+        """Check if existing file should be skipped."""
+        # Check if file already exists and overwrite is not enabled
+        if self.file_writer.check_file_exists(output_file) and not overwrite:
+            # Check if we can resume (content matches)
+            if self.file_writer.can_resume_write(output_file, markdown_content):
+                logging.info(f"File already exists with same content, skipping: {output_file}")
+                return True
+            else:
+                logging.info(f"File already exists, skipping: {output_file}")
+                return True
+        return False
+
+    def _process_and_write_content(
+        self, markdown_content, output_file, header, menu, item_text,
+        sanitize_content, verify_checksum
+    ):
+        """Process content and write to file."""
+        # Sanitize content if requested
+        processed_content = markdown_content
+        if sanitize_content:
+            processed_content = self.markdown_sanitizer.sanitize_content(
+                markdown_content,
+                remove_empty_lines=True,
+                fix_headers=True,
+                clean_tables=True,
+                normalize_whitespace=True
+            )
+        
+        # Write file atomically using FileWriter
+        success = self.file_writer.write_file_atomic(
+            content=processed_content,
+            output_path=output_file,
+            item_info=f"{header}/{menu}/{item_text}" if header or menu else item_text,
+            verify_checksum=verify_checksum
+        )
+        
+        if success:
+            logging.info(f"Successfully saved markdown to: {output_file}")
+        
+        return success
 
 
 # Maintain backward compatibility by exposing the main class

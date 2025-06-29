@@ -1,33 +1,78 @@
 """Navigation service package for Wyrm application.
 
-This package provides navigation operations through specialized sub-modules:
-- DriverManager: Handles WebDriver setup and cleanup
-- MenuExpander: Manages menu expansion operations
-- ContentNavigator: Handles item clicking and content waiting
+Coordinates DriverManager, MenuExpander, and ContentNavigator operations.
 """
 
 import asyncio
 from typing import Dict, Optional
-
 import structlog
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.remote.webdriver import WebDriver
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.remote.webelement import WebElement
 
 from .driver_manager import DriverManager
-from .menu_expander import MenuExpander
 from .content_navigator import ContentNavigator
+from .menu_scanner import MenuScanner
+from .menu_actions import MenuActions
+from .menu_state import MenuState
 from ..selectors_service import SelectorsService
 
 
-class NavigationService:
-    """Main navigation service that coordinates specialized sub-modules.
+class MenuExpander:
+    """Orchestrates menu expansion using scanner, actions, and state sub-modules."""
 
-    This service delegates to specialized sub-modules while maintaining
-    backward compatibility with the original NavigationService interface.
-    """
+    def __init__(self, driver: WebDriver) -> None:
+        """Initialize the menu expander with sub-modules."""
+        self.driver = driver
+        self.scanner = MenuScanner(driver)
+        self.actions = MenuActions(driver)
+        self.state = MenuState()
+        self.selectors = SelectorsService()
+
+    async def expand_menu_for_item(self, item, config_values: Dict) -> None:
+        """Handle menu expansion for a specific item using sub-modules."""
+        # Extract item attributes
+        item_id = getattr(item, 'id', None) or item.get("id")
+        item_text = getattr(item, 'text', None) or item.get("text", "Unknown")
+        menu_text = getattr(item, 'menu', None) or item.get("menu")
+        level = getattr(item, 'level', 0) or item.get("level", 0)
+
+        # Use PowerFlex-specific approach through scanner
+        try:
+            expansion_data = self.scanner.find_powerflex_expansion_path(item_id, item_text)
+            if expansion_data.get('found') and not expansion_data.get('alreadyVisible'):
+                await self.actions.expand_powerflex_path_to_item(expansion_data)
+                return
+        except Exception as e:
+            structlog.get_logger().warning(f"PowerFlex path expansion failed: {e}")
+
+        # Fallback to traditional approach
+        if level > 1:
+            ancestor_menus = await self.scanner.discover_ancestor_menus(item_text, item_id)
+            for ancestor_menu in ancestor_menus:
+                menu_info = self.scanner.find_menu_by_text(ancestor_menu)
+                if menu_info:
+                    await self.actions.expand_specific_menu(menu_info, 
+                        config_values["navigation_timeout"], config_values["expand_delay"])
+
+        # Expand direct menu if specified
+        if menu_text:
+            menu_info = self.scanner.find_menu_by_text(menu_text)
+            if menu_info:
+                await self.actions.expand_menu_containing_node(menu_info, item_id,
+                    config_values["navigation_timeout"], config_values["expand_delay"])
+
+    async def expand_all_menus_comprehensive(self, timeout: int = 60) -> None:
+        """Comprehensively expand all collapsible menus using sub-modules."""
+        await self.actions.expand_all_menus_comprehensive(self.scanner, timeout)
+
+        # Reveal standalone pages
+        standalone_containers = self.scanner.reveal_standalone_pages()
+        if standalone_containers:
+            await self.actions.reveal_standalone_pages(standalone_containers, timeout)
+
+
+class NavigationService:
+    """Main navigation service that coordinates specialized sub-modules."""
 
     def __init__(self) -> None:
         """Initialize the navigation service with sub-modules."""
@@ -44,204 +89,13 @@ class NavigationService:
         # Initialize helper classes with the driver
         driver = self.driver_manager.get_driver()
         if driver:
+            # Trigger dynamic structure detection
+            if hasattr(self.selectors, 'detect_structure_type'):
+                self.selectors.detect_structure_type(driver)
+
             self.menu_expander = MenuExpander(driver)
             self.content_navigator = ContentNavigator(driver)
 
-    async def navigate_and_wait(self, config, config_values: Dict) -> str:
-        """Navigate to URL and wait for sidebar to load.
-
-        Args:
-            config: Configuration dictionary
-            config_values: Extracted configuration values
-
-        Returns:
-            Raw sidebar HTML
-        """
-        driver = self.driver_manager.get_driver()
-        if not driver:
-            raise RuntimeError("WebDriver not initialized")
-
-        # Handle both AppConfig models and dict config for backward compatibility
-        if hasattr(config, 'target_url'):
-            url = config.target_url
-        else:
-            url = config.get("url") or config.get("target_url")
-        if not url:
-            raise ValueError("No URL specified in configuration")
-
-        self.logger.info("Navigating to target URL", url=url)
-        driver.get(url)
-        self.logger.info("Successfully navigated to target URL", url=url)
-
-        # Add delay for page to start loading
-        await asyncio.sleep(2.0)
-
-        self.logger.info("Waiting for sidebar to load...")
-        await self._wait_for_sidebar(
-            timeout=config_values["sidebar_wait_timeout"]
-        )
-        self.logger.info("Sidebar container loaded. Waiting for content...")
-
-        # Wait for the actual sidebar content to load with extended timeout
-        # Angular apps can take a while to fully load navigation structures
-        extended_timeout = max(config_values["sidebar_wait_timeout"] * 2, 30)
-        await self._wait_for_sidebar_content(
-            timeout=extended_timeout
-        )
-        self.logger.info("Sidebar loaded successfully.")
-
-        # Get and return sidebar HTML
-        return await self._get_sidebar_html()
-
-    async def _wait_for_sidebar(self, timeout: int = 15) -> WebElement:
-        """Wait for the sidebar container to be present and visible."""
-        driver = self.driver_manager.get_driver()
-        if not driver:
-            raise RuntimeError("WebDriver not initialized")
-
-        self.logger.debug("Waiting for sidebar container", timeout=timeout)
-
-        # Add retry logic with enhanced diagnostics
-        max_retries = 3
-        base_timeout = timeout // max_retries if max_retries > 1 else timeout
-
-        for attempt in range(max_retries):
-            try:
-                effective_timeout = base_timeout if attempt < max_retries - 1 else timeout
-                sidebar_element = WebDriverWait(driver, effective_timeout).until(
-                    EC.presence_of_element_located(self.selectors.SIDEBAR_CONTAINER)
-                )
-                self.logger.debug("Sidebar container found.", attempt=attempt + 1)
-                return sidebar_element
-
-            except TimeoutException:
-                self.logger.warning(
-                    f"Sidebar container not found (attempt {attempt + 1}/{max_retries})",
-                    timeout=effective_timeout,
-                    current_url=driver.current_url
-                )
-
-                if attempt < max_retries - 1:
-                    # Add diagnostic information
-                    try:
-                        page_title = driver.title
-                        page_state = driver.execute_script("return document.readyState")
-                        self.logger.debug(
-                            "Page diagnostics before retry",
-                            title=page_title,
-                            ready_state=page_state,
-                            url=driver.current_url
-                        )
-
-                        # Check if there are any error elements on the page
-                        error_elements = driver.find_elements(
-                            "css selector", "[class*='error'], [class*='Error']")
-                        if error_elements:
-                            self.logger.warning(
-                                f"Found {len(error_elements)} potential error elements on page")
-
-                    except Exception as diagnostic_error:
-                        self.logger.debug("Error collecting diagnostics",
-                                          error=str(diagnostic_error))
-
-                    # Wait a bit before retry
-                    await asyncio.sleep(2.0)
-                    continue
-
-        # Final failure
-        self.logger.error(
-            "Sidebar container not found after all retries",
-            timeout=timeout,
-            retries=max_retries,
-            current_url=driver.current_url
-        )
-        raise TimeoutException(
-            f"Sidebar container not found within {timeout} seconds after {max_retries} attempts")
-
-    async def _wait_for_sidebar_content(self, timeout: int = 15) -> None:
-        """Wait for the actual sidebar content (app-api-doc-item elements) to load.
-
-        The sidebar container may be present but empty while Angular loads the content.
-        This method waits for the actual navigation items to appear.
-
-        Args:
-            timeout: Maximum time to wait for content to load
-
-        Raises:
-            TimeoutException: If sidebar content doesn't load within timeout
-        """
-        driver = self.driver_manager.get_driver()
-        if not driver:
-            raise RuntimeError("WebDriver not initialized")
-
-        self.logger.debug("Waiting for sidebar content to load", timeout=timeout)
-
-        # Wait for app-api-doc-item elements to appear with retries
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                WebDriverWait(driver, timeout).until(
-                    EC.presence_of_element_located(self.selectors.APP_API_DOC_ITEM)
-                )
-                self.logger.debug(
-                    "Sidebar content loaded - app-api-doc-item elements found.")
-
-                # Additional short wait for content to stabilize
-                await asyncio.sleep(2.0)
-                return
-
-            except TimeoutException:
-                self.logger.warning(
-                    f"Sidebar content not found (attempt {attempt + 1}/{max_retries})",
-                    timeout=timeout
-                )
-
-                if attempt < max_retries - 1:
-                    # Try refreshing the page and waiting again
-                    self.logger.info("Refreshing page and retrying...")
-                    driver.refresh()
-                    await asyncio.sleep(3.0)  # Wait for page to start loading
-                    continue
-                else:
-                    # Final attempt failed, log diagnostic info
-                    self.logger.warning(
-                        "Final attempt failed, collecting diagnostic info")
-
-                    # Let's check what's actually in the sidebar
-                    try:
-                        sidebar_html = await self._get_sidebar_html()
-                        self.logger.debug("Current sidebar HTML preview",
-                                          html_preview=sidebar_html[:500])
-
-                        # Check if there are any other elements that might indicate loading
-                        other_elements = driver.find_elements(
-                            "css selector", "div.filter-api-sidebar-wrapper *")
-                        self.logger.debug(
-                            "Elements found in sidebar container", element_count=len(other_elements))
-
-                    except Exception as e:
-                        self.logger.debug(
-                            "Error examining sidebar content", error=str(e))
-
-                    raise TimeoutException(
-                        f"Sidebar content did not load within {timeout} seconds after {max_retries} attempts")
-
-    async def _get_sidebar_html(self) -> str:
-        """Get the raw HTML content of the sidebar."""
-        driver = self.driver_manager.get_driver()
-        if not driver:
-            raise RuntimeError("WebDriver not initialized")
-
-        try:
-            sidebar_element = driver.find_element(*self.selectors.SIDEBAR_CONTAINER)
-            sidebar_html = sidebar_element.get_attribute("outerHTML")
-            self.logger.debug("Retrieved sidebar HTML", html_length=len(sidebar_html))
-            return sidebar_html
-        except Exception as e:
-            self.logger.error("Failed to get sidebar HTML", error=str(e))
-            raise
-
-    # Delegate methods to sub-modules
     async def expand_menu_for_item(self, item, config_values: Dict) -> None:
         """Handle menu expansion for a specific item."""
         if not self.menu_expander:
@@ -260,81 +114,85 @@ class NavigationService:
             raise RuntimeError("ContentNavigator not initialized")
         await self.content_navigator.click_item_and_wait(item, config_values)
 
-    async def get_sidebar_html(self) -> str:
-        """Get the raw HTML content of the sidebar.
-
-        Public method to retrieve the current sidebar HTML content.
-        Useful after menu expansion to get the updated HTML structure.
-
-        Returns:
-            str: Raw HTML content of the sidebar element
-
-        Raises:
-            RuntimeError: If WebDriver is not initialized
-            Exception: If HTML retrieval fails
-        """
-        return await self._get_sidebar_html()
-
     async def navigate_to_item(self, item) -> None:
-        """Navigate to an item by expanding menus and clicking the item.
-
-        This method combines menu expansion and item clicking operations
-        to provide a complete navigation workflow for a sidebar item.
-
-        Args:
-            item: Item (SidebarItem model or dict) containing navigation metadata
-
-        Raises:
-            RuntimeError: If sub-modules are not initialized or driver is missing
-            Exception: If navigation fails
-        """
-        # Check driver initialization first
+        """Navigate to an item by expanding menus and clicking the item."""
         if not self.driver_manager.get_driver():
-            raise RuntimeError(
-                "WebDriver not initialized. Call initialize_driver() first.")
+            raise RuntimeError("WebDriver not initialized. Call initialize_driver() first.")
 
-        # Check sub-module initialization
         if not self.menu_expander or not self.content_navigator:
-            raise RuntimeError(
-                "Navigation sub-modules not initialized. Call initialize_driver() first.")
+            raise RuntimeError("Navigation sub-modules not initialized. Call initialize_driver() first.")
 
-        # Handle both SidebarItem models and dict items for backward compatibility
-        if hasattr(item, 'text'):
-            item_text = item.text
-        else:
-            item_text = item.get('text', 'Unknown')
-
+        item_text = getattr(item, 'text', None) or item.get('text', 'Unknown')
         self.logger.info("Navigating to item", item_text=item_text)
 
-        # Ensure the sidebar path to the item is visible before clicking.
-        # This expands the menu that directly contains the target node (and, if
-        # provided, its parent menu) so that the node element actually exists in
-        # the DOM.
-        await self.menu_expander.expand_menu_for_item(
-            item,
-            {
-                "navigation_timeout": 10,
-                "expand_delay": 0.25,
-            },
-        )
-
-        # Default timeouts/delays for the click-and-wait routine.  These should
-        # ideally come from the orchestrator-level config, but we keep sensible
-        # fall-backs here so that the helper can be used in isolation.
-        default_config_values = {
-            "navigation_timeout": 10,
-            "post_click_delay": 1.0,
-            "content_wait_timeout": 15,
-        }
-
-        # Click the item and wait for the main content pane to load.
-        await self.content_navigator.click_item_and_wait(item, default_config_values)
+        await self.menu_expander.expand_menu_for_item(item, {
+            "navigation_timeout": 10, "expand_delay": 0.25})
+        await self.content_navigator.click_item_and_wait(item, {
+            "navigation_timeout": 10, "post_click_delay": 1.0, "content_wait_timeout": 15})
 
         self.logger.info("Successfully navigated to item", item_text=item_text)
 
     def get_driver(self) -> Optional[WebDriver]:
         """Get the current WebDriver instance."""
         return self.driver_manager.get_driver()
+
+    async def navigate_and_wait(self, config, config_values: Dict) -> str:
+        """Navigate to target URL and wait for page to load.
+        
+        Args:
+            config: Application configuration object
+            config_values: Configuration values dictionary
+            
+        Returns:
+            Initial sidebar HTML content
+        """
+        driver = self.get_driver()
+        if not driver:
+            raise RuntimeError("WebDriver not initialized. Call initialize_driver() first.")
+            
+        # Get target URL from config
+        if hasattr(config, 'target_url'):
+            target_url = config.target_url
+        else:
+            target_url = config.get('target_url')
+            
+        if not target_url:
+            raise ValueError("No target URL specified in configuration")
+            
+        self.logger.info("Navigating to target URL", url=target_url)
+        driver.get(target_url)
+        
+        # Wait for initial page load
+        import time
+        time.sleep(config_values.get('sidebar_wait_timeout', 5.0))
+        
+        # Return initial sidebar HTML
+        return await self.get_sidebar_html()
+        
+    async def get_sidebar_html(self) -> str:
+        """Extract sidebar HTML from the current page.
+        
+        Returns:
+            HTML content of the sidebar
+        """
+        driver = self.get_driver()
+        if not driver:
+            raise RuntimeError("WebDriver not initialized. Call initialize_driver() first.")
+            
+        # Use selectors service to find sidebar content
+        try:
+            sidebar_elements = driver.find_elements(
+                self.selectors.by, self.selectors.sidebar_container
+            )
+            if sidebar_elements:
+                return sidebar_elements[0].get_attribute('outerHTML')
+            else:
+                # Fallback to page source if no specific sidebar found
+                self.logger.warning("No sidebar container found, using page source")
+                return driver.page_source
+        except Exception as e:
+            self.logger.warning(f"Error extracting sidebar HTML: {e}")
+            return driver.page_source
 
     async def cleanup(self, config) -> None:
         """Clean up the WebDriver and perform any necessary cleanup."""

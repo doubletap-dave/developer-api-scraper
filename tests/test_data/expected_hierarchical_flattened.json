@@ -1,0 +1,38 @@
+[
+  {
+    "id": "docs-node-123",
+    "text": "Login",
+    "type": "item",
+    "header": "Authentication",
+    "menu": null,
+    "parent_menu_text": null,
+    "level": 0
+  },
+  {
+    "id": null,
+    "text": "Users",
+    "type": "menu",
+    "header": "Authentication",
+    "menu": null,
+    "parent_menu_text": null,
+    "level": 0
+  },
+  {
+    "id": "docs-node-456",
+    "text": "Create User",
+    "type": "item",
+    "header": "Authentication",
+    "menu": "Users",
+    "parent_menu_text": "Users",
+    "level": 1
+  },
+  {
+    "id": "docs-node-789",
+    "text": "Delete User",
+    "type": "item",
+    "header": "Authentication",
+    "menu": "Users",
+    "parent_menu_text": "Users",
+    "level": 1
+  }
+]

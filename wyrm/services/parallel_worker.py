@@ -69,54 +69,9 @@ class ParallelWorker:
         """
         async with semaphore:
             try:
-                # Log worker start
-                self.logger.info(
-                    "Worker starting item processing",
-                    worker_id=self.worker_id,
-                    item_text=item.text,
-                    item_id=item.id
-                )
-
-                # Check if file already exists (unless force mode)
-                if not config_values.get('force', False):
-                    output_path = self.storage_service.get_output_path(
-                        item, config_values["base_output_dir"]
-                    )
-                    if output_path.exists():
-                        self.logger.debug(
-                            "Worker skipping existing file",
-                            worker_id=self.worker_id,
-                            path=str(output_path)
-                        )
-                        return True
-
-                # Initialize WebDriver for this worker
-                await self._initialize_driver(config)
-
-                # Navigate to site and prepare for item processing
-                await self._navigate_to_site(config, config_values)
-
-                # Expand menus to make the target item accessible
-                await self._ensure_item_accessible(item, config_values)
-
-                # Navigate to the specific item and extract content
-                await self._navigate_and_extract(item, config_values)
-
-                self.logger.info(
-                    "Worker completed item processing",
-                    worker_id=self.worker_id,
-                    item_text=item.text
-                )
-                return True
-
+                return await self._execute_worker_processing(item, config, config_values)
             except Exception as e:
-                self.logger.error(
-                    "Worker failed to process item",
-                    worker_id=self.worker_id,
-                    item_text=getattr(item, 'text', 'unknown'),
-                    item_id=getattr(item, 'id', 'unknown'),
-                    error=str(e)
-                )
+                self._log_worker_error(item, e)
                 return False
             finally:
                 # Always clean up resources
@@ -204,6 +159,27 @@ class ParallelWorker:
             item, driver, config_values
         )
 
+    async def _check_existing_output(self, item, config_values):
+        """Check if the file already exists and can be skipped."""
+        if not config_values.get('force', False):
+            output_path = self.storage_service.get_output_path(
+                item, config_values["base_output_dir"]
+            )
+            if output_path.exists():
+                self.logger.debug(
+                    "Worker skipping existing file",
+                    worker_id=self.worker_id,
+                    path=str(output_path)
+                )
+                return True
+        return False
+
+    async def _navigate_to_process_item(self, item, config, config_values):
+        """Navigate to the item and process it."""
+        await self._navigate_to_site(config, config_values)
+        await self._ensure_item_accessible(item, config_values)
+        await self._navigate_and_extract(item, config_values)
+
     async def _cleanup(self) -> None:
         """Clean up WebDriver and other resources."""
         try:
@@ -219,6 +195,43 @@ class ParallelWorker:
                 worker_id=self.worker_id,
                 error=str(e)
             )
+
+    async def _execute_worker_processing(self, item, config, config_values):
+        """Execute the worker processing workflow."""
+        # Log worker start
+        self.logger.info(
+            "Worker starting item processing",
+            worker_id=self.worker_id,
+            item_text=item.text,
+            item_id=item.id
+        )
+
+        # Check if file already exists (unless force mode)
+        if await self._check_existing_output(item, config_values):
+            return True
+
+        # Initialize WebDriver for this worker
+        await self._initialize_driver(config)
+
+        # Navigate to site and prepare for item processing
+        await self._navigate_to_process_item(item, config, config_values)
+
+        self.logger.info(
+            "Worker completed item processing",
+            worker_id=self.worker_id,
+            item_text=item.text
+        )
+        return True
+
+    def _log_worker_error(self, item, error):
+        """Log worker processing error."""
+        self.logger.error(
+            "Worker failed to process item",
+            worker_id=self.worker_id,
+            item_text=getattr(item, 'text', 'unknown'),
+            item_id=getattr(item, 'id', 'unknown'),
+            error=str(error)
+        )
 
     def get_driver(self) -> Optional[WebDriver]:
         """Get the current WebDriver instance for this worker."""
