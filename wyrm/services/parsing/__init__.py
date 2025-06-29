@@ -13,7 +13,7 @@ from ..selectors_service import SelectorsService
 from .debug_manager import DebugManager
 from .file_manager import FileManager
 from .item_validator import ItemValidator
-from .structure_parser import StructureParser
+from ..structure_parser import StructureParser
 
 
 class ParsingService:
@@ -21,7 +21,7 @@ class ParsingService:
 
     def __init__(self, selectors_service: Optional[SelectorsService] = None) -> None:
         """Initialize the Parsing service.
-        
+
         Args:
             selectors_service: Optional configured selectors service for endpoint-specific parsing
         """
@@ -42,7 +42,7 @@ class ParsingService:
         logging.info("Parsing sidebar structure...")
 
         # Parse HTML structure
-        structured_data = self.structure_parser.map_sidebar_structure(sidebar_html)
+        structured_data = self.structure_parser.parse(sidebar_html)
 
         # Flatten the structure for processing
         flattened_items_dict = self.structure_parser.flatten_sidebar_structure(
@@ -72,7 +72,7 @@ class ParsingService:
     # Delegate to structure_parser
     def _map_sidebar_structure(self, sidebar_html: str) -> List[Dict]:
         """Parse the sidebar HTML and map its structure."""
-        return self.structure_parser.map_sidebar_structure(sidebar_html)
+        return self.structure_parser.parse(sidebar_html)
 
     def _flatten_sidebar_structure(self, structured_data: List[Dict]) -> List[Dict]:
         """Flatten the nested structure into a single list of items."""

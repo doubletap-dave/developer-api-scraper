@@ -11,7 +11,7 @@ from typing import Optional
 import typer
 from rich.console import Console
 
-from wyrm.services import Orchestrator
+from wyrm.services.orchestration import Orchestrator
 from wyrm.services.logging_service import LoggingService
 
 console = Console()

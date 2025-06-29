@@ -1,0 +1,33 @@
+[
+  {
+    "header_text": "Authentication",
+    "children": [
+      {
+        "text": "Login",
+        "id": "docs-node-123",
+        "type": "item",
+        "is_expandable": false
+      },
+      {
+        "text": "Users",
+        "id": null,
+        "type": "menu",
+        "is_expandable": true,
+        "children": [
+          {
+            "text": "Create User",
+            "id": "docs-node-456",
+            "type": "item",
+            "is_expandable": false
+          },
+          {
+            "text": "Delete User",
+            "id": "docs-node-789",
+            "type": "item",
+            "is_expandable": false
+          }
+        ]
+      }
+    ]
+  }
+]

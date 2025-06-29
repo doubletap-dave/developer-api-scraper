@@ -71,7 +71,7 @@ A dedicated service will encapsulate all logging configuration. This keeps the s
 ## Implementation Summary ✅
 **Files Modified/Created:**
 - ✅ `requirements.txt` - Added structlog dependency
-- ✅ `VERSION` - Updated to 1.5.0  
+- ✅ `VERSION` - Updated to 1.5.0
 - ✅ `wyrm/services/logging_service.py` - New LoggingService class
 - ✅ `main.py` - Integrated logging setup
 - ✅ `wyrm/services/orchestrator.py` - Updated to use structured logging + cleanup fix

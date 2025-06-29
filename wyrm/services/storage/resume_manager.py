@@ -80,9 +80,9 @@ class ResumeManager:
                 item_id = item.get("id")
 
             # Generate the expected file path
-            from .file_operations import FileOperations
-            file_ops = FileOperations()
-            expected_path = file_ops._get_output_file_path(
+            from .path_builder import PathBuilder
+            path_builder = PathBuilder()
+            expected_path = path_builder.get_output_file_path(
                 header=header,
                 menu=menu,
                 item_text=item_text,

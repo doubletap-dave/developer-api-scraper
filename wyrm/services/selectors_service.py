@@ -12,7 +12,7 @@ class SelectorsService:
 
     def __init__(self, endpoint_version: str = "4.6") -> None:
         """Initialize the Selectors service.
-        
+
         Args:
             endpoint_version: API version (e.g., "4.6", "3.6") to adapt selectors
         """
@@ -74,7 +74,7 @@ class SelectorsService:
         By.ID,
         "documentation"
     )  # Target the container div itself
-    
+
     # Tab panel selector for multi-tab responses
     ACTIVE_TAB_PANEL = (By.CSS_SELECTOR, "div[role='tabpanel'][aria-hidden='false']")
 
@@ -97,13 +97,13 @@ class SelectorsService:
         """Setup version-specific selectors based on endpoint version."""
         # Default structure type - will be dynamically detected
         self.CONTENT_STRUCTURE_TYPE = "unknown"
-        
+
     def detect_structure_type(self, driver) -> str:
         """Dynamically detect the structure type from the actual DOM.
-        
+
         Args:
             driver: WebDriver instance to examine the DOM
-            
+
         Returns:
             Structure type: 'flat_with_trailing_header', 'hierarchical_with_leading_header', or 'mixed'
         """
@@ -113,7 +113,7 @@ class SelectorsService:
             items_with_ids = len(driver.find_elements("css selector", "li.toc-item-highlight[id]"))
             items_without_ids = len(driver.find_elements("css selector", "li.toc-item-highlight:not([id])"))
             expandable_menus = len(driver.find_elements("css selector", "li.toc-item-highlight i.dds__icon--chevron-right"))
-            
+
             # Log structure analysis
             import structlog
             logger = structlog.get_logger(__name__)
@@ -124,7 +124,7 @@ class SelectorsService:
                 items_without_ids=items_without_ids,
                 expandable_menus=expandable_menus
             )
-            
+
             # Detect structure patterns
             if items_without_ids > items_with_ids and expandable_menus > 0:
                 # Lots of items without IDs but with expandable menus - likely flat structure
@@ -135,11 +135,11 @@ class SelectorsService:
             else:
                 # Mixed or unclear structure
                 structure_type = "mixed"
-            
+
             logger.info("Detected structure type", structure_type=structure_type)
             self.CONTENT_STRUCTURE_TYPE = structure_type
             return structure_type
-            
+
         except Exception as e:
             import structlog
             logger = structlog.get_logger(__name__)
@@ -147,41 +147,41 @@ class SelectorsService:
             # Default to hierarchical
             self.CONTENT_STRUCTURE_TYPE = "hierarchical_with_leading_header"
             return "hierarchical_with_leading_header"
-    
+
     def needs_enhanced_expansion(self, driver) -> bool:
         """Determine if enhanced expansion strategies are needed.
-        
+
         Args:
             driver: WebDriver instance to examine
-            
+
         Returns:
             True if enhanced expansion is recommended
         """
         try:
             # Check for indicators that suggest enhanced expansion is needed
             standalone_items = len(driver.find_elements(
-                "css selector", 
+                "css selector",
                 "li.toc-item-highlight[id]:not(:has(i.dds__icon--chevron-right)):not(:has(i.dds__icon--chevron-down))"
             ))
-            
+
             unexpanded_menus = len(driver.find_elements(
-                "css selector", 
+                "css selector",
                 "li.toc-item-highlight:not([id]) i.dds__icon--chevron-right"
             ))
-            
+
             # If we have many standalone items or unexpanded menus, use enhanced expansion
             return standalone_items > 5 or unexpanded_menus > 3
-            
+
         except Exception:
             # If detection fails, err on the side of enhanced expansion
             return True
-    
+
     def detect_endpoint_version(self, url: str) -> str:
         """Detect endpoint version from URL.
-        
+
         Args:
             url: Target URL to analyze
-            
+
         Returns:
             Detected version string (e.g., "3.6", "4.6")
         """
@@ -192,14 +192,14 @@ class SelectorsService:
             return version_match.group(1)
         # Default to 4.6 if not detected
         return "4.6"
-    
+
     @classmethod
     def create_for_url(cls, url: str) -> 'SelectorsService':
         """Create a SelectorsService instance configured for the given URL.
-        
+
         Args:
             url: Target URL to configure selectors for
-            
+
         Returns:
             Configured SelectorsService instance
         """
