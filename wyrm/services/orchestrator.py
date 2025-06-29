@@ -132,6 +132,9 @@ class Orchestrator:
 
             # Get configuration values
             config_values = self.config_service.extract_configuration_values(config)
+            
+            # Initialize endpoint-aware services
+            self._initialize_endpoint_aware_services(config)
 
             # Setup directories
             self.config_service.setup_directories(config_values)
@@ -779,3 +782,27 @@ class Orchestrator:
             self.logger.info("Cleanup completed successfully")
         except Exception as e:
             self.logger.error("Error during cleanup", error=str(e))
+    
+    def _initialize_endpoint_aware_services(self, config: AppConfig) -> None:
+        """Initialize services that need to be aware of the endpoint version.
+        
+        Args:
+            config: Application configuration containing target URL
+        """
+        # Create endpoint-aware selectors service
+        from .selectors_service import SelectorsService
+        selectors_service = SelectorsService.create_for_url(config.target_url)
+        
+        # Initialize parsing service with endpoint-aware selectors
+        from .parsing import ParsingService
+        self.parsing_service = ParsingService(selectors_service)
+        
+        # Update navigation service with endpoint-aware selectors
+        self.navigation_service.selectors = selectors_service
+        
+        self.logger.info(
+            "Initialized endpoint-aware services",
+            endpoint_version=selectors_service.endpoint_version,
+            structure_type=getattr(selectors_service, 'CONTENT_STRUCTURE_TYPE', 'hierarchical'),
+            target_url=config.target_url
+        )

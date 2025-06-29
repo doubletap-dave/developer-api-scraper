@@ -1,0 +1,88 @@
+================================================================================
+WYRM PROJECT LINE COUNT AUDIT REPORT
+Generated: 2025-06-29 11:05:14
+================================================================================
+
+SUMMARY
+----------------------------------------
+Total Python files: 33
+Total lines: 8,712
+Total code lines: 6,061
+Total comment lines: 1,108
+Total size: 342,042 bytes (334.0 KB)
+
+OVERSIZED MODULES (>500 lines)
+----------------------------------------
+ 1. wyrm/services/navigation/menu_expander.py
+    Lines: 1,143 | Code: 843 | Size: 53,273 bytes
+ 2. wyrm/services/orchestrator.py
+    Lines: 808 | Code: 602 | Size: 33,197 bytes
+ 3. wyrm/services/parsing/structure_parser.py
+    Lines: 596 | Code: 429 | Size: 28,776 bytes
+ 4. tests/test_orchestrator_process_items.py
+    Lines: 595 | Code: 401 | Size: 24,213 bytes
+
+Total oversized modules: 4
+
+TOP 20 LARGEST FILES BY LINE COUNT
+------------------------------------------------------------
+Rank Lines  Code   Size (KB)  File
+------------------------------------------------------------
+1    1143   843    52.0       wyrm/services/navigation/menu_expander.py
+2    808    602    32.4       wyrm/services/orchestrator.py
+3    596    429    28.1       wyrm/services/parsing/structure_parser.py
+4    595    401    23.6       tests/test_orchestrator_process_items.py
+5    373    268    13.5       wyrm/services/configuration_service.py
+6    371    246    15.1       wyrm/services/navigation/__init__.py
+7    359    241    13.6       scrape_api_docs.py
+8    343    218    10.9       wyrm/services/storage/file_operations.py
+9    334    231    11.1       benchmark_startup.py
+10   324    210    14.1       wyrm/services/storage/content_extractor.py
+11   314    224    10.7       wyrm/services/parallel_orchestrator.py
+12   262    180    8.5        tools/line_audit.py
+13   236    159    6.9        wyrm/services/progress_service.py
+14   225    148    8.0        wyrm/services/parallel_worker.py
+15   213    136    7.9        wyrm/services/selectors_service.py
+16   205    143    8.0        wyrm/models/config.py
+17   193    133    6.6        wyrm/services/logging_service.py
+18   190    126    7.3        wyrm/services/navigation/content_navigator.py
+19   185    117    4.9        tests/test_utils.py
+20   180    121    6.6        wyrm/models/scrape.py
+
+ALL FILES DETAILED BREAKDOWN
+--------------------------------------------------------------------------------
+Lines  Code   Comments Blank  Size (KB)  File
+--------------------------------------------------------------------------------
+1143   843    114      186    52.0       wyrm/services/navigation/menu_expander.py
+808    602    86       120    32.4       wyrm/services/orchestrator.py
+596    429    76       91     28.1       wyrm/services/parsing/structure_parser.py
+595    401    106      88     23.6       tests/test_orchestrator_process_items.py
+373    268    36       69     13.5       wyrm/services/configuration_service.py
+371    246    56       69     15.1       wyrm/services/navigation/__init__.py
+359    241    52       66     13.6       scrape_api_docs.py
+343    218    47       78     10.9       wyrm/services/storage/file_operations.py
+334    231    32       71     11.1       benchmark_startup.py
+324    210    52       62     14.1       wyrm/services/storage/content_extractor.py
+314    224    33       57     10.7       wyrm/services/parallel_orchestrator.py
+262    180    28       54     8.5        tools/line_audit.py
+236    159    27       50     6.9        wyrm/services/progress_service.py
+225    148    38       39     8.0        wyrm/services/parallel_worker.py
+213    136    39       38     7.9        wyrm/services/selectors_service.py
+205    143    26       36     8.0        wyrm/models/config.py
+193    133    24       36     6.6        wyrm/services/logging_service.py
+190    126    29       35     7.3        wyrm/services/navigation/content_navigator.py
+185    117    17       51     4.9        tests/test_utils.py
+180    121    24       35     6.6        wyrm/models/scrape.py
+173    126    19       28     5.9        wyrm/services/storage/resume_manager.py
+170    135    14       21     5.2        main.py
+167    114    22       31     6.5        wyrm/services/navigation/driver_manager.py
+150    107    20       23     5.0        wyrm/services/storage/__init__.py
+141    84     29       28     5.5        wyrm/services/parsing/__init__.py
+117    81     16       20     5.0        test_scraper.py
+88     56     13       19     2.7        wyrm/services/parsing/item_validator.py
+80     54     10       16     2.8        wyrm/services/parsing/debug_manager.py
+80     58     10       12     3.2        wyrm/services/parsing/file_manager.py
+35     28     4        3      0.6        wyrm/models/__init__.py
+23     18     2        3      0.6        wyrm/services/__init__.py
+22     15     3        4      0.8        wyrm/__init__.py
+17     9      4        4      0.5        tests/__init__.py

@@ -1,35 +1,35 @@
-target_url: "https://developer.dell.com/apis/4008/versions/3.6/docs"
+target_url: "https://developer.dell.com/apis/4008/versions/3.6/docs/1-Introduction.md"
 output_directory: "output"
 log_file: "logs/wyrm.log"
-log_level: "INFO" # DEBUG, INFO, WARNING, ERROR, CRITICAL
+log_level: "DEBUG" # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 webdriver:
   browser: "edge" # "chrome", "firefox", "edge"
-  headless: true
+  headless: true # Set to false for debugging to see what's happening
 
 # Delays and Timeouts (in seconds)
 delays:
   # Base delays (used in headless mode or if no overrides are set)
   navigation: 15       # Timeout for initial page navigation
   element_wait: 15     # Default timeout for waiting for generic elements (if used)
-  sidebar_wait: 30     # Specific timeout for waiting for sidebar container
+  sidebar_wait: 45     # Specific timeout for waiting for sidebar container - increased for 3.x
   expand_menu: 0.5     # Delay between clicking menu expanders
-  post_expand_settle: 1.0 # Delay after expansion loop before parsing
+  post_expand_settle: 2.0 # Delay after expansion loop before parsing - increased
   # post_click: 0.5      # (For Phase 3) Delay after clicking a sidebar item
   # content_wait: 10     # (For Phase 3) Timeout waiting for content pane markdown
 
   # --- Optional overrides for non-headless mode (--no-headless) ---
   navigation_noheadless: 30
-  sidebar_wait_noheadless: 30
+  sidebar_wait_noheadless: 45
   expand_menu_noheadless: 0.7
-  post_expand_settle_noheadless: 2.0
+  post_expand_settle_noheadless: 3.0
   post_click_noheadless: 0.7
   content_wait_noheadless: 15
 
 # Other Behaviors
 behavior:
   # Base behavior
-  max_expand_attempts: 10 # Max loops to try expanding menus
+  max_expand_attempts: 15 # Max loops to try expanding menus - increased
   # skip_existing: true    # (For Phase 4) Skip files if they exist
 
   # --- Optional overrides for non-headless mode ---

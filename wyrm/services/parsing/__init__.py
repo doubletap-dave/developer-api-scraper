@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from wyrm.models.scrape import SidebarItem, SidebarStructure
+from ..selectors_service import SelectorsService
 from .debug_manager import DebugManager
 from .file_manager import FileManager
 from .item_validator import ItemValidator
@@ -18,9 +19,13 @@ from .structure_parser import StructureParser
 class ParsingService:
     """Service for handling parsing operations."""
 
-    def __init__(self) -> None:
-        """Initialize the Parsing service."""
-        self.structure_parser = StructureParser()
+    def __init__(self, selectors_service: Optional[SelectorsService] = None) -> None:
+        """Initialize the Parsing service.
+        
+        Args:
+            selectors_service: Optional configured selectors service for endpoint-specific parsing
+        """
+        self.structure_parser = StructureParser(selectors_service)
         self.debug_manager = DebugManager()
         self.item_validator = ItemValidator()
         self.file_manager = FileManager()

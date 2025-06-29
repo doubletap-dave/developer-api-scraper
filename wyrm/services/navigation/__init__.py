@@ -44,7 +44,12 @@ class NavigationService:
         # Initialize helper classes with the driver
         driver = self.driver_manager.get_driver()
         if driver:
+            # Trigger dynamic structure detection
+            if hasattr(self.selectors, 'detect_structure_type'):
+                self.selectors.detect_structure_type(driver)
+            
             self.menu_expander = MenuExpander(driver)
+            self.menu_expander.selectors = self.selectors  # Pass endpoint-aware selectors
             self.content_navigator = ContentNavigator(driver)
 
     async def navigate_and_wait(self, config, config_values: Dict) -> str:
@@ -94,12 +99,30 @@ class NavigationService:
         return await self._get_sidebar_html()
 
     async def _wait_for_sidebar(self, timeout: int = 15) -> WebElement:
-        """Wait for the sidebar container to be present and visible."""
+        """Wait for the sidebar container to be present and visible.
+        
+        Enhanced for 3.x endpoints which may need more time in headless mode.
+        """
         driver = self.driver_manager.get_driver()
         if not driver:
             raise RuntimeError("WebDriver not initialized")
+        
+        # Increase timeout for 3.x endpoints which seem to need more time in headless mode
+        endpoint_version = getattr(self.selectors, 'endpoint_version', '4.6')
+        if endpoint_version.startswith('3.'):
+            # Give 3.x endpoints more time, especially in headless mode
+            timeout = max(timeout, 45)  # At least 45 seconds for 3.x
+            self.logger.debug(
+                "Using extended timeout for 3.x endpoint", 
+                original_timeout=15, 
+                extended_timeout=timeout
+            )
 
-        self.logger.debug("Waiting for sidebar container", timeout=timeout)
+        self.logger.debug(
+            "Waiting for sidebar container", 
+            timeout=timeout, 
+            endpoint_version=endpoint_version
+        )
 
         # Add retry logic with enhanced diagnostics
         max_retries = 3
