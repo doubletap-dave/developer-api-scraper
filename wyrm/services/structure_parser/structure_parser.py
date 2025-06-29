@@ -11,6 +11,7 @@ from .html_cleaner import HtmlCleaner
 from .markdown_converter import MarkdownConverter
 from .link_resolver import LinkResolver
 from .hierarchical_parser import HierarchicalStructureParser
+from .flattening_utils import StructureFlattener
 
 from ..selectors_service import SelectorsService
 
@@ -29,6 +30,7 @@ class StructureParser:
         self.hierarchical_parser = HierarchicalStructureParser(
             self.html_cleaner, self.markdown_converter, self.link_resolver
         )
+        self.structure_flattener = StructureFlattener(self.markdown_converter)
 
     def parse(self, sidebar_html: str) -> List[Dict]:
         """Parse the sidebar HTML and map its structure.
@@ -249,59 +251,4 @@ class StructureParser:
 
     def flatten_sidebar_structure(self, structured_data: List[Dict]) -> List[Dict]:
         """Flatten the nested structure into a single list of items, preserving hierarchy info."""
-        flattened_list: List[Dict] = []
-        for header_group in structured_data:
-            header_text = header_group.get("header_text", "Unknown Header")
-            for top_level_item in header_group.get("children", []):
-                # Process top-level items (can be menus or simple items)
-                self._flatten_recursive(
-                    top_level_item,
-                    flattened_list,
-                    header=header_text,
-                    menu=None,
-                    parent_menu_text=None,  # Top level items have no parent menu text within the group
-                    level=0,
-                )
-        logging.info(
-            f"Flattened structure contains {len(flattened_list)} processable items.")
-        return flattened_list
-
-    def _flatten_recursive(
-        self,
-        item: Dict,
-        result_list: List[Dict],
-        header: Optional[str],
-        menu: Optional[str],  # The immediate parent menu's text
-        parent_menu_text: Optional[str],  # The parent menu's text (could be same as menu)
-        level: int,
-    ):
-        """Recursive helper to flatten the structure."""
-        # Validate and format the item
-        if not self.markdown_converter.validate_item_data(item):
-            return
-
-        # Add the current item/menu itself to the list
-        flat_entry = self.markdown_converter.format_item_entry({
-            "id": item.get("id"),
-            "text": item.get("text"),
-            "type": item.get("type"),
-            "header": header,
-            "menu": menu,
-            "parent_menu_text": parent_menu_text,
-            "level": level,
-        })
-        result_list.append(flat_entry)
-
-        # If it's a menu, recurse into its children
-        if item.get("type") == "menu" and item.get("is_expandable"):
-            # Children of this menu have the current menu's text as their 'menu'
-            # and also as their parent_menu_text
-            for child in item.get("children", []):
-                self._flatten_recursive(
-                    child,
-                    result_list,
-                    header=header,
-                    menu=item.get("text"),  # Child belongs to this menu
-                    parent_menu_text=item.get("text"),  # This menu is the parent
-                    level=level + 1,
-                )
+        return self.structure_flattener.flatten_sidebar_structure(structured_data)

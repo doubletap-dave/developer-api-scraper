@@ -222,11 +222,20 @@ class DOMTraversal:
         Returns:
             List of ancestor menu texts in order from top-level to immediate parent
         """
-        ancestor_menus = []
-
         try:
-            # JavaScript to traverse up and find ancestor menus
-            js_script = """
+            js_script = self._build_ancestor_traversal_script()
+            ancestor_menus = self.driver.execute_script(js_script, item_id, item_text)
+            
+            self._log_expansion_path_results(item_text, ancestor_menus)
+            return ancestor_menus or []
+            
+        except Exception as e:
+            logging.warning(f"Error discovering ancestor menus for '{item_text}': {e}")
+            return []
+
+    def _build_ancestor_traversal_script(self) -> str:
+        """Build JavaScript for traversing DOM to find ancestor menus."""
+        return """
             function findAncestorMenus(targetId, targetText) {
                 let targetElement = null;
 
@@ -273,17 +282,11 @@ class DOMTraversal:
             }
 
             return findAncestorMenus(arguments[0], arguments[1]);
-            """
+        """
 
-            ancestor_menus = self.driver.execute_script(js_script, item_id, item_text)
-
-            if ancestor_menus:
-                logging.debug(
-                    f"Discovered ancestor menus for '{item_text}': {ancestor_menus}")
-            else:
-                logging.debug(f"No ancestor menus found for '{item_text}' in DOM")
-
-        except Exception as e:
-            logging.warning(f"Error discovering ancestor menus for '{item_text}': {e}")
-
-        return ancestor_menus or []
+    def _log_expansion_path_results(self, item_text: str, ancestor_menus: List[str]) -> None:
+        """Log the results of expansion path discovery."""
+        if ancestor_menus:
+            logging.debug(f"Discovered ancestor menus for '{item_text}': {ancestor_menus}")
+        else:
+            logging.debug(f"No ancestor menus found for '{item_text}' in DOM")
